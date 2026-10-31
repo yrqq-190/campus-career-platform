@@ -1,0 +1,42 @@
+name: 功能建议
+description: 描述用户需求、使用场景和可验证的产品建议。
+title: "功能主题：预期能力"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先阅读项目上下文与功能范围。
+        本项目不抓取 BOSS 直聘数据，不复制面经正文，不提供站内投递。
+  - type: textarea
+    id: need
+    attributes:
+      label: 用户需求
+      description: 哪种使用场景存在困难，解决后会带来什么价值？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 描述用户能够观察到的行为，而非仅列出技术名称。
+    validations:
+      required: true
+  - type: textarea
+    id: alignment
+    attributes:
+      label: 范围关系
+      description: 说明与现有规格、MVP 范围及 Non-Goals 的关系。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收条件
+      description: 说明如何验证建议已经满足需求。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案与影响
+      description: 可说明替代方法、兼容性、外部依赖或数据访问方面的影响。

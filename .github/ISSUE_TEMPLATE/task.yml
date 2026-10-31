@@ -1,0 +1,41 @@
+name: 改进任务
+description: 提出具有明确范围和验收条件的工程或文档改进。
+title: "改进主题：具体动作"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请描述可独立评审的改进目标，并确认其符合项目范围。
+        请勿填写真实简历、个人联系方式、密钥或访问令牌。
+  - type: textarea
+    id: goal
+    attributes:
+      label: 目标与背景
+      description: 说明需要解决的问题及预期结果。
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 变更范围
+      description: 说明影响的功能、文档或配置，以及关联规格。
+    validations:
+      required: true
+  - type: textarea
+    id: approach
+    attributes:
+      label: 实现思路
+      description: 说明可行的方法、影响与必要的前置条件。
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收条件
+      description: 使用可以观察和验证的结果描述完成标准。
+      placeholder: "- [ ] 可以通过明确步骤核对预期结果。"
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: 关联资料
+      description: 可提供相关 Issue、规格、决策或复现材料的链接。

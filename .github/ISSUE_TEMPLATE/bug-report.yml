@@ -1,0 +1,48 @@
+name: 问题报告
+description: 报告能够复现的功能、文档或配置问题。
+title: "问题主题：具体表现"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请提供最小复现信息，避免粘贴真实用户数据或凭据。
+        安全问题不应公开披露可利用细节；若仓库提供私密报告入口，请通过该入口提交。
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 说明问题发生的位置及影响。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开相关文档或功能。
+        2. 执行触发问题的操作。
+        3. 观察实际结果。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境与版本
+      description: 提供与复现相关的操作系统、浏览器、应用版本或提交标识。
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 补充材料
+      description: 可附脱敏截图、日志或最小样例。
