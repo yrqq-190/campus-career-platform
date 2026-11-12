@@ -9,10 +9,10 @@
 |---|---|---|---|
 | M1 简历解析 | 贾小舒 | module-01 | 一致 |
 | M2 霍兰德画像 | 贾小舒 | module-02 | 一致 |
-| M3 岗位推荐 | 赵蔚 | module-03 | 待核（4.3 待交付） |
-| M4 投递登记 | 赵蔚 | module-04 | 待核（4.4 待交付） |
-| M5 模拟面试 | 卢果 | module-05 | 待核（4.5 待交付） |
-| M6 面试提醒 | 卢果 | module-06 | 待核（4.6 待交付） |
+| M3 岗位推荐 | 赵蔚 | module-03 | 一致 |
+| M4 投递登记 | 赵蔚 | module-04 | 一致 |
+| M5 模拟面试 | 卢果 | module-05 | 一致 |
+| M6 面试提醒 | 卢果 | module-06 | 一致 |
 | M7 面经外链 | 熊尚华 | module-07 | 一致 |
 | M8 档案看板 | 熊尚华 | module-08 | 一致 |
 
@@ -25,10 +25,10 @@
 | 3 | M1 读取档案 | `GET /api/v1/resumes/current` · 无业务码（未建档返回 `data: null`，不返 404） | module-01 AC-2、AC-4 | 一致 |
 | 4 | M2 作答与提交 | `PUT /api/v1/holland/answers`（单题保存）· `POST /api/v1/holland/submissions`（提交计分）· 422 `QUIZ_INCOMPLETE` / 409 `QUIZ_DUPLICATE_SUBMIT` / 422 `SCORE_NOT_TRACEABLE` | module-02 AC-6、AC-7 | 一致 |
 | 5 | M2 画像降级 | `GET /api/v1/holland/profile` · 200 + `PROFILE_SKILL_MISSING`（降级标记，不是错误码） | module-02 AC-5；边界表 | 一致 |
-| 6 | M3 岗位推荐 | 待 4.3 交付 | module-03 AC-2、AC-3：`PROFILE_SKILL_MISSING`（200）/ `JOB_LINK_INVALID`（404） | 待核 |
-| 7 | M4 投递登记 | 待 4.4 交付 | module-04 AC-2、AC-3：`ALREADY_APPLIED`（409）/ `INVALID_STATUS_TRANSITION`（409） | 待核 |
-| 8 | M5 模拟面试 | 待 4.5 交付 | module-05 边界表：`JD_REQUIRED`（400）；超时 10 秒 + 重试 1 次属 NFR，不设业务码 | 待核 |
-| 9 | M6 面试提醒 | 待 4.6 交付 | module-06 AC-6：`REMINDER_SEND_FAILED`；FR-2 五次触发；AC-9 改期重算 | 待核 |
+| 6 | M3 岗位推荐 | `GET /api/v1/jobs/recommendations` · 404 `JOB_LINK_INVALID`；200 + `PROFILE_SKILL_MISSING`（降级标记，非错误码） | module-03 AC-2、AC-3 | 一致 |
+| 7 | M4 投递登记 | `POST /api/v1/applications` · `GET /api/v1/applications` · 409 `ALREADY_APPLIED` / 409 `INVALID_STATUS_TRANSITION` | module-04 AC-2、AC-3 | 一致 |
+| 8 | M5 模拟面试 | `POST /api/v1/mock-interviews` · `/{sessionId}/answers` · `/{sessionId}/report` · 400 `JD_REQUIRED`；超时 504 无业务码（NFR-1） | module-05 AC-4；边界表 | 一致 |
+| 9 | M6 面试提醒 | `POST /api/v1/interviews` · `PATCH /api/v1/interviews/{id}` · `GET /{id}/reminders` · `GET /{id}/calendar` · 无业务码；`REMINDER_SEND_FAILED` 为 200 内 lastError 字段 | module-06 AC-4、AC-6、AC-7、AC-9；FR-2 | 一致 |
 | 10 | M7 面经外链 | `GET /api/v1/interview-notes` · `POST /api/v1/interview-notes` · `GET /api/v1/interview-notes/{noteId}/reachability` · 无业务码（400 参数 / 422 服务层 / 404 不存在均为传输层） | module-07 AC-1～AC-5；NFR-1～NFR-4 | 一致 |
 | 11 | M8 档案看板 | `GET /api/v1/dashboard` · `GET /api/v1/dashboard/sections/{section}` · 403 `DASHBOARD_FORBIDDEN`；无任何写端点 | module-08 AC-6；NFR-1、NFR-2 | 一致 |
 
@@ -41,5 +41,5 @@
 ## 四、判定结论
 
 - 8 个模块全部「一致」→ 契约与 spec 对齐，PR #60 可合并
-- 当前 4 个一致（M1、M2、M7、M8），4 个待核（M3–M6），待 4.3–4.6 交付后补全
+- 8 个模块全部一致（M1–M8），契约与 spec 对齐，无自造错误码
 - 出现「已改」→ 在此登记改了什么、改在 architecture.md 哪一节
