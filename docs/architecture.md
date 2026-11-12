@@ -323,7 +323,7 @@ API 层（Spring Boot 3.x Controller）
 ### 4.3 M3 岗位推荐与外链（主笔：赵蔚）
 
 > 依据 `spec/module-03-job-match.md`。M3 读取 M2 已生成的画像，不调用 M4、M5；不抓取岗位正文入库，仅做外链跳转与失效标记。
-> 业务错误码仅 2 个：`PROFILE_NOT_FOUND`、`EXTERNAL_SOURCE_ERROR`；无匹配岗位属于正常空状态，返回 `200` 和空数组 `[]`，不报错。
+> 业务错误码仅 2 个：`PROFILE_SKILL_MISSING`、`JOB_LINK_INVALID`。
 > 分层归属：画像读取与推荐排序在**服务层**；API 层只做参数校验与鉴权。
 
 **端点总览**
@@ -355,22 +355,21 @@ API 层（Spring Boot 3.x Controller）
 }
 ```
 
-若无匹配岗位或画像无技能标签，data 返回空数组 []，不报错（AC-2）。
+无画像无技能标签时，`data` 返回空数组 `[]`，同时以 200 状态返回降级标记 `PROFILE_SKILL_MISSING`（AC-2），不报错。
 
 **失败响应**
 
 | 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
 |---|---|---|---|---|
 | 401 | -（无业务码） | 未登录或 Token 失效 | 不返回数据 | 通用鉴权 |
-| 404 | `PROFILE_NOT_FOUND` | 学生尚未生成画像 | 不返回数据 | AC-2；边界行 1 |
-| 502 | `EXTERNAL_SOURCE_ERROR` | 外部岗位数据源获取失败 | 不写入库，不展示推荐 | 边界行 3 |
+| 404 | `JOB_LINK_INVALID` | 岗位外链失效 | 不返回数据 | AC-3 |
 
 > **越界声明**：M3 不负责投递状态登记（属 M4），不负责抓取外链正文和全文检索（仅做跳转）。
-
+> 
 ### 4.4 M4 投递状态登记（主笔：赵蔚）
 
 > 依据 `spec/module-04-application-log.md`。M4 独立维护投递记录，不调用 M3、M5；状态机流转与幂等校验都在服务层。
-> 业务错误码仅 2 个：`INVALID_STATUS_TRANSITION`、`DUPLICATE_APPLICATION`，且**不可合并共用**。
+> 业务错误码仅 2 个：`ALREADY_APPLIED`、`INVALID_STATUS_TRANSITION`，且不可合并共用。
 > 分层归属：状态流转校验、幂等判断在**服务层**；API 层只做参数校验与鉴权。
 
 **端点总览**
@@ -442,7 +441,9 @@ API 层（Spring Boot 3.x Controller）
 
 | 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
 |---|---|---|---|---|
-| 401 | -（无业务码） | 未登录或 Token 失效 | 不返回数据 | 通用鉴权 |
+| 400 | -（无业务码） | `jobId` 缺失或状态值非法 | 不写库 | API 层 Bean Validation |
+| 409 | `ALREADY_APPLIED` | 同一学生同一岗位重复登记 | 拦截，不产生新记录 | AC-2 |
+| 409 | `INVALID_STATUS_TRANSITION` | 非法状态流转 | 拦截，原记录状态不变 | AC-3 |
 
 > **越界声明**：M4 不负责判断该不该投、不生成面试日程（属 M6）、不发送提醒。
 
