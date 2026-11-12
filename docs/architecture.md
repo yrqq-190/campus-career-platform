@@ -340,8 +340,8 @@ API 层（Spring Boot 3.x Controller）
 
 **成功路径**
 1. 展示层选择文件 → API 层 `POST /api/resumes`
-2. API 层校验：扩展名 ∈ {pdf, docx}，大小 ≤ 10MB
-3. 服务层抽取纯文本 → 调用大模型结构化输出 → JSON Schema 校验
+2. API 层仅做传输层防护：文件字段存在性、请求体大小硬上限（防超大请求打爆内存），不做业务判定
+3. 服务层执行业务校验：扩展名 ∈ {pdf, docx}、大小 ≤ 10MB，再抽取纯文本 → 调用大模型结构化输出 → JSON Schema 校验
 4. 写 `resume` 表（同一学生覆盖更新）→ 返回解析结果
 5. 展示层进入确认页，学生可修正后保存
 
@@ -349,24 +349,24 @@ API 层（Spring Boot 3.x Controller）
 
 | 情形 | 返回 | 数据影响 | 可否重试 |
 |---|---|---|---|
-| 文件 > 10MB | 413 `FILE_TOO_LARGE` | 不落库，不留临时文件 | 换文件重试 |
-| 扩展名不在白名单 | 415 `UNSUPPORTED_FILE_TYPE` | 不落库 | 换文件重试 |
-| 大模型超时 | 504 `LLM_TIMEOUT` | 不落库，原 resume 不变 | 可重试，重复上传覆盖同一条，不新增 |
+| 文件 > 10MB | 413 `RESUME_TOO_LARGE` | 不落库，不留临时文件 | 换文件重试 |
+| 扩展名不在白名单 | 415 `RESUME_FORMAT_UNSUPPORTED` | 不落库 | 换文件重试 |
+| 大模型超时 | 504 `PARSE_TIMEOUT` | 不落库，原 resume 不变 | 可重试，重复上传覆盖同一条，不新增 |
 
 ### 5.2 M2 霍兰德问卷与画像
 
 **成功路径**
 1. 展示层提交 30 题答案 → `POST /api/holland/answers`
-2. API 层校验题数与选项合法性
-3. 服务层计分（RIASEC 六维）→ 按 `student_id` upsert `holland_profile`
+2. API 层校验请求结构完整（字段存在、题号为数字），不做业务判定
+3. 服务层校验题数与选项合法性 → 计分（RIASEC 六维）→ 首次提交时写 `holland_profile`，`student_id` 唯一约束保证一人一份
 4. 返回六维画像 → 展示层渲染雷达图
 
 **失败路径**
 
 | 情形 | 返回 | 数据影响 | 可否重试 |
 |---|---|---|---|
-| 题数不足 / 选项越界 | 400 `QUESTIONNAIRE_INCOMPLETE` | 不写库，原画像不变 | 补齐后重试 |
-| 重复提交 | 200，覆盖更新同一画像 | 记录数不增，不产生第二份画像 | 幂等 |
+| 题数不足 / 选项越界 | 400 `QUIZ_INCOMPLETE` | 不写库，原画像不变 | 补齐后重试 |
+| 重复提交 | 409 `QUIZ_DUPLICATE_SUBMIT` | 不写库，原画像不变 | 不可重试，页面提示已提交 |
 
 ### 5.3 M3 岗位推荐与外链
 
