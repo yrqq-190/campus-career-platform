@@ -62,10 +62,263 @@ API 层（Spring Boot 3.x Controller）
 
 > 每个模块必须写全 5 要素：URL / 请求 / 成功响应 / 失败响应 / 错误码。
 > 只写成功不写失败的一律打回。
+### 4.1 M1 简历上传与解析（主笔：贾小舒）
 
-### 4.1 M1 简历上传与解析（主笔：贾小舒 · 待补）
+> 依据 `spec/module-01-resume-parse.md`。M1 不调用 M2–M8 任何模块；只被 M2 读取「已确认」的档案。
+> 错误码全部取自该 spec 的 AC-3 / AC-5 / AC-6 / AC-7 / AC-8 与「边界与异常」表，**不新增表中没有的码**。
+> 分层归属：扩展名白名单、10MB 上限、文件可读性判定属**服务层**（第 2 章「服务层」已明确含 10MB 校验）；multipart 结构合法性属 **API 层参数校验**，不承载业务规则。
 
-### 4.2 M2 霍兰德问卷与画像（主笔：贾小舒 · 待补）
+**端点总览**
+
+| # | 方法 | URL | 用途 | 对应 spec |
+|---|---|---|---|---|
+| 1 | POST | `/api/v1/resumes` | 上传并解析，返回暂存区结果 | AC-1、AC-3、AC-4、AC-5～AC-8 |
+| 2 | POST | `/api/v1/resumes/confirm` | 学生修改后确认入库 | AC-2、AC-9 |
+| 3 | GET | `/api/v1/resumes/current` | 读取当前已确认档案 | AC-2、AC-9 |
+
+#### 4.1.1 上传并解析
+
+**URL**：`POST /api/v1/resumes`
+
+**请求**
+
+- Header：`Authorization: Bearer <JWT>`；`Content-Type: multipart/form-data`
+- Body：`file` 单文件；扩展名 ∈ {`pdf`, `docx`}；实际文件类型须与扩展名一致；大小 ≤ `MAX_RESUME_SIZE = 10MB`
+
+**成功响应**：`201 Created`
+
+```json
+{
+  "code": "OK",
+  "requestId": "6b2f8c1e",
+  "data": {
+    "resumeId": "r_20261112_001",
+    "status": "PENDING_CONFIRM",
+    "parse": {
+      "education":   [{ "school": "XX大学", "major": "软件工程", "degree": "本科", "startDate": "2022-09", "endDate": "2026-06" }],
+      "skills":      ["Java", "SQL"],
+      "projects":    [{ "name": "校园二手交易", "role": "后端", "description": "..." }],
+      "internships": []
+    }
+  }
+}
+```
+
+- 四类字段**恒存在**，简历中没有的类别返回空数组而非省略（AC-4）。
+- 本次只写暂存区，正式档案不变，`status = PENDING_CONFIRM`（AC-1）；未确认内容其他模块不得读取（FR-6）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 415 | `RESUME_FORMAT_UNSUPPORTED` | 非 PDF / Word；或扩展名 .pdf 但实际是图片、压缩包 | 不落盘、不建档 | AC-5；边界行 1、2 |
+| 415 | `RESUME_UNREADABLE` | Word 设了打开密码；或文件 0 字节、已损坏 | 不落盘、不建档 | AC-5；边界行 3、4 |
+| 413 | `RESUME_TOO_LARGE` | 文件 > 10MB（恰好 10MB 放行） | 不落盘、不建档 | AC-3；边界行 5 |
+| 504 | `PARSE_TIMEOUT` | 大模型 30 秒超时、重试 2 次后仍失败 | 不落盘，原档案不变 | AC-6；边界行 6 |
+| 502 | `MODEL_OUTPUT_INVALID` | 模型输出非合法 JSON，或未过 JSON Schema 校验 | 不展示半成品，原档案不变 | AC-7；边界行 7 |
+| 422 | `NO_VALID_FIELD` | 解析流程完成但四类字段全空 | 不生成空档案 | AC-8；边界行 8 |
+
+统一失败响应体：
+
+```json
+{ "code": "RESUME_TOO_LARGE", "message": "单份简历不超过 10MB", "requestId": "6b2f8c1e" }
+```
+
+> 上表 6 个码即 M1 的全部业务错误码，与 spec「边界与异常」表逐行一一对应，无新增码。任务要求的 415 / 413 / 504 / 502 / 422 五个状态码均在本端点覆盖。
+
+#### 4.1.2 确认入库
+
+**URL**：`POST /api/v1/resumes/confirm`
+
+**请求**
+
+```json
+{
+  "resumeId": "r_20261112_001",
+  "education":   [ ... ],
+  "skills":      ["Java", "Spring Boot"],
+  "projects":    [ ... ],
+  "internships": []
+}
+```
+
+学生可在确认页逐项修改、删除或新增条目，以提交内容为准写入（AC-2）。
+
+**成功响应**：`200 OK`
+
+```json
+{
+  "code": "OK",
+  "requestId": "9a71d0f2",
+  "data": { "status": "CONFIRMED", "confirmedAt": "2026-11-12T15:00:00+08:00", "skillCount": 2 }
+}
+```
+
+新内容整体替换旧档案，不保存、不展示、不比对历史版本（FR-7）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 422 | `NO_VALID_FIELD` | 学生把四类字段全部删空后提交 | 不写库、不生成空档案，原档案不变 | FR-5；AC-8；边界行 8 |
+
+> 本端点不调用大模型，故不出现 504 / 502。入库失败时原档案保持上传前状态（AC-9）。
+
+#### 4.1.3 读取当前档案
+
+**URL**：`GET /api/v1/resumes/current`
+
+**请求**：Header 带 JWT，无 body。
+
+**成功响应**：`200 OK`
+
+已建档返回四类字段与 `status = CONFIRMED`；未建档返回 `"data": null`。**空态不是错误**，不返回 404。
+
+**失败响应**：仅 401 鉴权失败（API 层统一拦截，非业务错误码），无业务失败分支。
+
+> **越界声明**：本节不定义画像生成（M2）、岗位匹配（M3）、面试与提醒（M6）接口。M1 不向下游推送数据，由 M2 主动读取已确认档案。
+
+### 4.2 M2 霍兰德问卷与画像（主笔：贾小舒）
+
+> 依据 `spec/module-02-holland-profile.md`。M2 读取 M1 已确认档案，不调用 M3–M8；被 M3、M5 读取画像。
+> 业务错误码仅 3 个：`QUIZ_INCOMPLETE`、`QUIZ_DUPLICATE_SUBMIT`、`SCORE_NOT_TRACEABLE`；另有 `PROFILE_SKILL_MISSING`，它是 200 响应中的**降级标记，不是错误**（AC-5）。
+> 分层归属：计分、追溯校验、画像合成全部在**服务层**（第 2 章已明确「画像计分属服务层」）；API 层只做参数与鉴权。
+
+**端点总览**
+
+| # | 方法 | URL | 用途 | 对应 spec |
+|---|---|---|---|---|
+| 1 | GET | `/api/v1/holland/questions` | 取 30 题与已存作答（续答） | AC-4、FR-1、FR-2 |
+| 2 | PUT | `/api/v1/holland/answers` | 单题即时保存 | FR-2、AC-4 |
+| 3 | POST | `/api/v1/holland/submissions` | 提交、计分、生成画像 | AC-1、AC-2、AC-5～AC-8 |
+| 4 | GET | `/api/v1/holland/profile` | 读取当前画像 | AC-2、AC-3、AC-5 |
+| 5 | POST | `/api/v1/holland/profile/regenerate` | 重新生成并整体替换 | AC-3 |
+
+#### 4.2.1 获取题目与已保存作答
+
+**URL**：`GET /api/v1/holland/questions`
+
+**请求**：Header 带 JWT，无 body。
+
+**成功响应**：`200 OK`
+
+```json
+{
+  "code": "OK",
+  "data": {
+    "questions": [
+      { "id": 1, "text": "...", "dimension": "R", "options": ["非常不符合", "不太符合", "比较符合", "非常符合"] }
+    ],
+    "answers": { "1": 2, "2": 4 },
+    "answeredCount": 2,
+    "submitted": false
+  }
+}
+```
+
+题目内容与顺序固定，不随机抽题（FR-1）；`answers` 回填已保存选项，支持中途退出后从断点续答（AC-4）。
+
+**失败响应**：仅 401 鉴权失败，无业务失败分支。
+
+#### 4.2.2 单题即时保存
+
+**URL**：`PUT /api/v1/holland/answers`
+
+**请求**
+
+```json
+{ "questionId": 18, "option": 3 }
+```
+
+`questionId` ∈ 1–30，`option` ∈ 1–4。
+
+**成功响应**：`200 OK`
+
+```json
+{ "code": "OK", "data": { "saved": true, "answeredCount": 17 } }
+```
+
+每次选择即时保存，无需显式「保存草稿」按钮（FR-2）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 说明 |
+|---|---|---|---|---|
+| 400 | —（无业务码） | `questionId` 不在 1–30，或 `option` 不在 1–4 | 不写库 | API 层 Bean Validation 统一返回，不新增业务错误码 |
+| 409 | `QUIZ_DUPLICATE_SUBMIT` | 问卷已提交后再次修改作答 | 不覆盖已提交版本 | AC-7 |
+
+#### 4.2.3 提交问卷并生成画像
+
+**URL**：`POST /api/v1/holland/submissions`
+
+**请求**：Header 带 JWT，无 body（以服务端已保存作答为准，避免前端重复上传答案造成不一致）。
+
+**成功响应**：`201 Created`
+
+```json
+{
+  "code": "OK",
+  "requestId": "c31e77a0",
+  "data": {
+    "scores": { "R": 72, "I": 85, "A": 40, "S": 63, "E": 58, "C": 49 },
+    "profile": {
+      "directions": [{ "name": "后端开发", "reason": "I 维度 85，命中 Java/SQL 技能" }],
+      "cities": ["杭州", "苏州"],
+      "industries": ["互联网"],
+      "skillGaps": [{ "skill": "分布式缓存", "reason": "目标方向要求 Redis" }]
+    }
+  }
+}
+```
+
+- 六维分数 0–100，每个维度均可回溯到具体作答（AC-1、FR-4）。
+- 画像四项齐全，方向 3–5 个且各带支撑理由，短板 ≤ 5 项（AC-2、FR-6）。
+- 当正式档案缺技能字段时，`skillGaps` 返回 `{ "status": "PROFILE_SKILL_MISSING" }`，**不是空数组，也不报错**，兴趣维度、城市、行业照常返回（AC-5、FR-8）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 422 | `QUIZ_INCOMPLETE` | 30 题未全部作答 | 不生成任何画像数据，已答题目保留 | AC-6；边界行 1 |
+| 409 | `QUIZ_DUPLICATE_SUBMIT` | 已成功提交后再次提交 | 画像仍为一份，不产生第二份 | AC-7；边界行 2 |
+| 500 | `SCORE_NOT_TRACEABLE` | 某维度得分无法回溯到任何作答 | 本次画像不对外提供，不展示部分错误分数 | AC-8；边界行 6 |
+
+422 的响应体需带未答题号：
+
+```json
+{ "code": "QUIZ_INCOMPLETE", "message": "还有 20 题未作答", "requestId": "c31e77a0", "missing": [11,12,"...",30] }
+```
+
+#### 4.2.4 读取当前画像
+
+**URL**：`GET /api/v1/holland/profile`
+
+**请求**：Header 带 JWT，无 body。
+
+**成功响应**：`200 OK`
+
+一张画像整体返回（AC-3 保证同一时刻只有一份）；`skillGaps` 可能为 `PROFILE_SKILL_MISSING` 标记（AC-5）。尚未生成画像时返回 `"data": null`，空态不报错。
+
+**失败响应**：仅 401 鉴权失败，无业务失败分支。
+
+#### 4.2.5 重新生成画像
+
+**URL**：`POST /api/v1/holland/profile/regenerate`
+
+**请求**：Header 带 JWT，无 body。用于简历更新并确认后重新生成（US-3）。
+
+**成功响应**：`200 OK`
+
+返回新画像，旧画像整体替换、不再存在，不提供新旧对比视图（AC-3、FR-7）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 422 | `QUIZ_INCOMPLETE` | 问卷尚未提交就请求生成画像 | 不生成画像 | AC-6；边界行 8 |
+| 500 | `SCORE_NOT_TRACEABLE` | 某维度得分无法回溯到任何作答 | 本次画像不对外提供 | AC-8；边界行 6 |
+
+> **越界声明**：M2 不返回岗位卡片、匹配度与推荐排序（属 M3），不生成面试问题与评分（属 M5）。画像以固定字段结构对外提供，其他模块按字段名取值，不依赖自然语言描述做二次解析（FR-5）。
 
 ### 4.3 M3 岗位推荐与外链（主笔：赵蔚 · 待补）
 
