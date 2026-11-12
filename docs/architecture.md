@@ -443,9 +443,372 @@ API 层（Spring Boot 3.x Controller）
 
 > **越界声明**：M4 不负责判断该不该投、不生成面试日程（属 M6）、不发送提醒。
 
-### 4.5 M5 文字模拟面试（主笔：卢果 · 待补）
+### 4.5 M5 文字模拟面试（主笔：卢果）
 
-### 4.6 M6 面试登记与多级提醒（主笔：卢果 · 待补）
+> 依据 `spec/module-05-mock-interview.md`。错误码全部取自该 spec 的 AC-4 / AC-5 / AC-6 与「边界与异常」表，**不新增表中没有的码**。
+> 分层归属：接口超时、四维评分缺项判定、归档写入，均属**服务层**；JD 空值校验、路径参数格式属 **API 层参数校验**，不承载业务规则。
+
+**端点总览**
+
+| # | 方法 | URL | 用途 | 对应 spec |
+|---|---|---|---|---|
+| 1 | POST | `/api/v1/mock-interviews` | 开始面试，生成题目 | AC-1、AC-4 |
+| 2 | POST | `/api/v1/mock-interviews/{sessionId}/answers` | 提交单题作答并评分 | AC-2、AC-5 |
+| 3 | POST | `/api/v1/mock-interviews/{sessionId}/report` | 生成并归档最终报告 | AC-3、AC-6 |
+
+#### 4.5.1 开始面试
+
+**URL**：`POST /api/v1/mock-interviews`
+
+**请求**
+
+- Header：`Authorization: Bearer <JWT>`
+- Body：
+
+```json
+{
+  "jobId": "j_20261112_007",
+  "jdText": "负责后端服务开发，熟悉 Java / Spring Boot / MySQL ..."
+}
+```
+
+- `jobId` 与 `jdText` 二选一：传 `jobId` 时优先读 M4 的投递记录；不传或 M4 无记录时，必须传 `jdText`（≥50 字）走降级路径（FR-1）。
+
+**成功响应**：`201 Created`
+
+```json
+{
+  "code": "OK",
+  "requestId": "a4b2c1d0",
+  "data": {
+    "sessionId": "mi_20261112_001",
+    "status": "IN_PROGRESS",
+    "totalQuestions": 5,
+    "currentQuestion": {
+      "questionId": 1,
+      "content": "请描述一次你解决线上故障的经历。",
+      "dimension": "项目经验"
+    }
+  }
+}
+```
+
+- 题目从预置题库按岗位类型抽取，固定 5-8 道（FR-3）。
+- `dimension` 必须从 `专业知识 / 逻辑表达 / 项目经验 / 岗位匹配度` 四维中取一（FR-5）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 400 | `JD_REQUIRED` | `jobId` 未传且 `jdText` 为空或不足 50 字 | 不创建会话 | AC-4；边界表「JD 为空」 |
+| 504 | `INTERVIEW_TIMEOUT` | 抽题接口请求超时（10 秒）且重试 1 次仍失败 | 不创建会话 | 边界表「接口超时与重试」 |
+
+#### 4.5.2 提交单题作答并评分
+
+**URL**：`POST /api/v1/mock-interviews/{sessionId}/answers`
+
+**请求**
+
+- Header：`Authorization: Bearer <JWT>`
+- Body：
+
+```json
+{
+  "questionId": 3,
+  "answerText": "当时我们线上订单服务出现超时，我通过日志定位到 ..."
+}
+```
+
+- `sessionId` 必须属于当前登录学生，且会话状态为 `IN_PROGRESS`。
+- `answerText` 不能为空字符串；系统按关键词命中规则评分，不调大模型（FR-5、Non-Goals）。
+
+**成功响应**：`200 OK`
+
+```json
+{
+  "code": "OK",
+  "requestId": "b5c3d2e1",
+  "data": {
+    "questionId": 3,
+    "score": 72,
+    "scoreStatus": "COMPLETE",
+    "feedback": "命中关键词：日志定位、订单服务、超时恢复。",
+    "hasNextQuestion": true,
+    "nextQuestion": {
+      "questionId": 4,
+      "content": "如果让你重新设计这套方案，你会怎么做？",
+      "dimension": "逻辑表达"
+    }
+  }
+}
+```
+
+- `score` 为 0–100 整数；`scoreStatus` 取 `COMPLETE` 或 `PARTIAL`（某维度未命中时标 `PARTIAL`，对应 AC-5 / 边界表「评分维度缺项」）。
+- `hasNextQuestion = false` 时，`nextQuestion` 为 `null`，前端可引导用户调用 4.5.3 生成报告。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 404 | `SESSION_NOT_FOUND` | `sessionId` 不存在或不属于当前学生 | 不评分、不写库 | 边界表「会话状态异常」 |
+| 409 | `SESSION_NOT_ACTIVE` | 会话已归档或已取消，仍尝试提交作答 | 不评分 | 边界表「会话状态异常」 |
+| 504 | `INTERVIEW_TIMEOUT` | 评分接口请求超时（10 秒）且重试 1 次仍失败 | 作答草稿保留在前端 `localStorage` | 边界表「接口超时与重试」 |
+
+
+#### 4.5.3 生成并归档最终报告
+
+**URL**：`POST /api/v1/mock-interviews/{sessionId}/report`
+
+**请求**
+
+- Header：`Authorization: Bearer <JWT>`
+- Body：无。以服务端已保存的全部作答记录为准，不重复上传答案。
+
+**成功响应**：`201 Created`
+
+```json
+{
+  "code": "OK",
+  "requestId": "c6d4e3f2",
+  "data": {
+    "sessionId": "mi_20261112_001",
+    "status": "ARCHIVED",
+    "totalScore": 68,
+    "dimensionScores": {
+      "专业知识": 75,
+      "逻辑表达": 62,
+      "项目经验": 70,
+      "岗位匹配度": 65
+    },
+    "summary": "逻辑表达维度偏弱，建议用 STAR 结构组织回答。",
+    "archivedAt": "2026-11-12T17:30:00+08:00"
+  }
+}
+```
+
+- 报告写入 `mock_interviews` 归档记录后，M8 档案看板才可读取（M5 只归档，M8 只读，依赖方向不反向）。
+- 四维分数中任一维度缺项时，该维度记为 0 并在 `summary` 中标注「该维度能力有待提升」（AC-5 / 边界表「评分维度缺项」）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 409 | `SESSION_NOT_COMPLETE` | 仍有未作答题目的会话直接请求归档 | 不写归档，返回未答题目列表 | 边界表「会话状态异常」 |
+| 500 | `ARCHIVE_FAILED` | 报告同步至 M8 看板时发生异常 | 不产生归档，前端提示“报告归档失败” | 边界表「报告归档失败」 |
+| 504 | `INTERVIEW_TIMEOUT` | 归档接口请求超时（10 秒）且重试 1 次仍失败 | 不写归档，会话保持 `IN_PROGRESS` | 边界表「接口超时与重试」 |
+
+> **越界声明**：本节不定义岗位匹配（M3）、投递登记（M4）、面试日程提醒（M6）及看板展示（M8）接口。
+
+---
+
+### 4.6 M6 面试登记与多级提醒（主笔：卢果）
+
+> 依据 `spec/module-06-interview-reminder.md`。错误码全部取自该 spec 的 AC-5 / AC-6 / AC-7 / AC-8 / AC-9 与「边界与异常」表，**不新增表中没有的码**。
+> 分层归属：5 节点计算、改期重算、发送失败重试，均属**服务层**；日期格式、字段必填属 **API 层参数校验**。
+
+**端点总览**
+
+| # | 方法 | URL | 用途 | 对应 spec |
+|---|---|---|---|---|
+| 1 | POST | `/api/v1/interviews` | 登记面试，生成 5 次提醒 | AC-1、AC-2、AC-8 |
+| 2 | PATCH | `/api/v1/interviews/{interviewId}` | 改期或取消，旧提醒失效并重算 | AC-5、AC-9 |
+| 3 | GET | `/api/v1/interviews/{interviewId}/reminders` | 查询该面试的提醒任务状态 | AC-2、AC-6、AC-7 |
+| 4 | GET | `/api/v1/interviews/{interviewId}/calendar` | 导出 `.ics` 日历文件 | AC-4 |
+
+#### 4.6.1 登记面试
+
+**URL**：`POST /api/v1/interviews`
+
+**请求**
+
+- Header：`Authorization: Bearer <JWT>`
+- Body：
+
+```json
+{
+  "company": "某科技有限公司",
+  "position": "后端开发实习生",
+  "startTime": "2026-11-20T14:00:00+08:00",
+  "departureTime": "2026-11-20T12:30:00+08:00",
+  "location": "杭州市余杭区某大厦",
+  "format": "OFFLINE"
+}
+```
+
+- `departureTime` 可为空；为空时前 2 小时提醒按 `startTime` 倒推，并在响应中标记 `baselineFallback = true`（AC-8 / 边界表「基准缺失」）。
+- `format` 取 `ONLINE / OFFLINE`；`ONLINE` 时 `location` 填会议链接，`OFFLINE` 时填详细地址（边界表「未填面试地点」）。
+
+**成功响应**：`201 Created`
+
+```json
+{
+  "code": "OK",
+  "requestId": "d7e5f4a3",
+  "data": {
+    "interviewId": "itv_20261112_001",
+    "status": "SCHEDULED",
+    "reminders": [
+      { "nodeType": "D3", "triggerAt": "2026-11-17T14:00:00+08:00" },
+      { "nodeType": "D1", "triggerAt": "2026-11-19T14:00:00+08:00" },
+      { "nodeType": "H2_DEPARTURE", "triggerAt": "2026-11-20T10:30:00+08:00" },
+      { "nodeType": "M30", "triggerAt": "2026-11-20T13:30:00+08:00" },
+      { "nodeType": "POST_REVIEW", "triggerAt": "2026-11-20T16:00:00+08:00" }
+    ],
+    "baselineFallback": false
+  }
+}
+```
+
+- 提醒任务由 `@Scheduled` 扫描生成，登记时不立即推送（FR-2）。
+- 5 条提醒写入 `reminder` 表，唯一约束 `(interview_id, node_type)` 防重复触发（第 3 章核心实体）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 400 | `INVALID_INTERVIEW_TIME` | `startTime` 早于当前时间 | 不写库，不生成提醒 | 边界表「时间冲突」 |
+| 400 | `LOCATION_REQUIRED` | `ONLINE` 未填会议链接，或 `OFFLINE` 未填详细地址 | 不写库 | 边界表「未填面试地点」 |
+
+#### 4.6.2 改期或取消
+
+**URL**：`PATCH /api/v1/interviews/{interviewId}`
+
+**请求**
+
+- Header：`Authorization: Bearer <JWT>`
+- Body（改期）：
+
+```json
+{
+  "startTime": "2026-11-21T10:00:00+08:00",
+  "departureTime": "2026-11-21T08:30:00+08:00"
+}
+```
+
+- Body（取消）：
+
+```json
+{
+  "status": "CANCELLED"
+}
+```
+
+**成功响应**：`200 OK`
+
+```json
+{
+  "code": "OK",
+  "requestId": "e8f6a5b4",
+  "data": {
+    "interviewId": "itv_20261112_001",
+    "status": "RESCHEDULED",
+    "oldRemindersInvalidated": true,
+    "newReminders": [
+      { "nodeType": "H2_DEPARTURE", "triggerAt": "2026-11-21T06:30:00+08:00" },
+      { "nodeType": "M30", "triggerAt": "2026-11-21T09:30:00+08:00" },
+      { "nodeType": "POST_REVIEW", "triggerAt": "2026-11-21T12:00:00+08:00" }
+    ],
+    "skippedExpiredNodes": ["D3", "D1"]
+  }
+}
+```
+
+- 改期时旧 5 条提醒全部置为失效（`oldRemindersInvalidated = true`），按新时间重新计算并生成未过期节点（AC-9 / 边界表「改期或取消后旧提醒失效与重建」）。
+- 取消时 `status = CANCELLED`，旧提醒全部失效，后续 `@Scheduled` 扫描直接跳过（AC-5）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 404 | `INTERVIEW_NOT_FOUND` | `interviewId` 不存在或不属于当前学生 | 不修改任何数据 | 边界表「面试不存在/已取消」 |
+| 400 | `INVALID_INTERVIEW_TIME` | 改期后的 `startTime` 早于当前时间 | 旧提醒保持不变，不重算 | 边界表「时间冲突」 |
+| 409 | `INTERVIEW_ALREADY_CANCELLED` | 对已取消的面试再次执行 PATCH | 不修改状态 | 边界表「面试不存在/已取消」 |
+| 409 | `REMINDER_INVALIDATED` | 改期成功后，调度器仍尝试触发旧时间的任务 | 强制拦截，丢弃推送，确保“改期后旧提醒失效” | AC-9；边界表「旧提醒失效」 |
+
+#### 4.6.3 查询提醒任务状态
+
+**URL**：`GET /api/v1/interviews/{interviewId}/reminders`
+
+**请求**
+
+- Header：`Authorization: Bearer <JWT>`
+- Body：无。
+
+**成功响应**：`200 OK`
+
+```json
+{
+  "code": "OK",
+  "requestId": "f9a7b6c5",
+  "data": {
+    "interviewId": "itv_20261112_001",
+    "reminders": [
+      {
+        "nodeType": "D3",
+        "triggerAt": "2026-11-17T14:00:00+08:00",
+        "sendStatus": "SENT",
+        "channel": ["IN_APP", "EMAIL"]
+      },
+      {
+        "nodeType": "H2_DEPARTURE",
+        "triggerAt": "2026-11-20T10:30:00+08:00",
+        "sendStatus": "FAILED",
+        "retryCount": 3,
+        "lastError": "REMINDER_SEND_FAILED",
+        "channel": ["IN_APP", "EMAIL"]
+      }
+    ]
+  }
+}
+```
+
+- `sendStatus` 取 `PENDING / SENT / FAILED`；`FAILED` 时带 `retryCount` 和 `lastError`（AC-6）。
+- 同一 `(interview_id, node_type)` 只存在一条记录，`@Scheduled` 通过唯一约束拦截重复触发（AC-7 / 边界表「重复触发」）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 404 | `INTERVIEW_NOT_FOUND` | `interviewId` 不存在或不属于当前学生 | 不返回任何提醒数据 | 边界表「面试不存在/已取消」 |
+| 409 | `REMINDER_DUPLICATE_TRIGGER` | 调度器扫描周期重叠，尝试对已发送的节点发起重复推送 | 执行幂等拦截，不产生重复推送 | AC-7；边界表「重复触发」 |
+
+#### 4.6.4 导出 `.ics` 日历文件
+
+**URL**：`GET /api/v1/interviews/{interviewId}/calendar`
+
+**请求**
+
+- Header：`Authorization: Bearer <JWT>`
+- Body：无。
+
+**成功响应**：`200 OK`
+
+`Content-Type: text/calendar; charset=utf-8`，Body 为 `.ics` 文件流：
+
+```text
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Campus Career//Interview Calendar//CN
+BEGIN:VEVENT
+UID:itv_20261112_001@campus-career
+DTSTART:20261120T060000Z
+DTEND:20261120T070000Z
+SUMMARY:面试 - 某科技有限公司 后端开发实习生
+LOCATION:杭州市余杭区某大厦
+END:VEVENT
+END:VCALENDAR
+```
+
+- `.ics` 仅做导出，不参与站内提醒（FR-4 / Non-Goals）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 404 | `INTERVIEW_NOT_FOUND` | `interviewId` 不存在或不属于当前学生 | 不生成文件 | 边界表「面试不存在/已取消」 |
+| 409 | `INTERVIEW_CANCELLED` | 面试已取消 | 不生成文件 | 边界表「面试不存在/已取消」 |
+
+> **越界声明**：本节不定义投递状态流转（M4）、模拟面试（M5）、面经收录（M7）及看板聚合（M8）接口。
 
 ### 4.7 M7 面经外链（主笔：熊尚华）
 
