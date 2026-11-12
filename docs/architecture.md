@@ -323,18 +323,18 @@ API 层（Spring Boot 3.x Controller）
 ### 4.3 M3 岗位推荐与外链（主笔：赵蔚）
 
 > 依据 `spec/module-03-job-match.md`。M3 读取 M2 已生成的画像，不调用 M4、M5；不抓取岗位正文入库，仅做外链跳转与失效标记。
-> 业务错误码仅 2 个：`PROFILE_SKILL_MISSING`、`JOB_LINK_INVALID`。
+> 业务错误码仅 1 个：`JOB_LINK_INVALID` (404)；`PROFILE_SKILL_MISSING` 为 200 降级标记，不是错误码。
 > 分层归属：画像读取与推荐排序在**服务层**；API 层只做参数校验与鉴权。
 
 **端点总览**
 
 | # | 方法 | URL | 用途 | 对应 spec |
 |---|---|---|---|---|
-| 1 | GET | `/api/v1/m3/recommendations` | 获取岗位推荐列表 | AC-1、AC-2、AC-3 |
+| 1 | GET | `/api/v1/jobs/recommendations` | 获取岗位推荐列表 | AC-1、AC-2、AC-3 |
 
 #### 4.3.1 获取岗位推荐列表
 
-**URL**: `GET /api/v1/m3/recommendations`
+**URL**: `GET /api/v1/jobs/recommendations`
 
 **请求**: Header 带 JWT，无 body。
 
@@ -376,12 +376,12 @@ API 层（Spring Boot 3.x Controller）
 
 | # | 方法 | URL | 用途 | 对应 spec |
 |---|---|---|---|---|
-| 1 | POST | `/api/v1/m4/applications` | 登记投递状态 | AC-1、AC-3、AC-4 |
-| 2 | GET | `/api/v1/m4/applications` | 查询投递记录列表 | AC-2、AC-5 |
+| 1 | POST | `/api/v1/applications` | 登记投递状态 | AC-1、AC-3、AC-4 |
+| 2 | GET | `/api/v1/applications` | 查询投递记录列表 | AC-2、AC-5 |
 
 #### 4.4.1 登记投递状态
 
-**URL**: `POST /api/v1/m4/applications`
+**URL**: `POST /api/v1/applications`
 
 **请求**
 
@@ -407,12 +407,12 @@ API 层（Spring Boot 3.x Controller）
 | 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
 |---|---|---|---|---|
 | 400 | -（无业务码） | `jobId` 缺失或状态值非法 | 不写库 | API 层 Bean Validation |
-| 409 | `DUPLICATE_APPLICATION` | 同一学生同一岗位重复提交 | 拦截，返回已存在记录 ID，不产生新记录 | AC-3；边界行 1 |
-| 409 | `INVALID_STATUS_TRANSITION` | 非法状态流转（如 已投递 → 已投递） | 拦截，原记录状态不变 | 边界行 2 |
+| 409 | `ALREADY_APPLIED` | 同一学生同一岗位重复登记 | 拦截，不产生新记录 | AC-2 |
+| 409 | `INVALID_STATUS_TRANSITION` | 非法状态流转 | 拦截，原记录状态不变 | AC-3 |
 
 #### 4.4.2 查询投递记录列表
 
-**URL**: `GET /api/v1/m4/applications`
+**URL**: `GET /api/v1/applications`
 
 **请求**: Header 带 JWT，无 body。
 
@@ -439,9 +439,7 @@ API 层（Spring Boot 3.x Controller）
 
 | 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
 |---|---|---|---|---|
-| 400 | -（无业务码） | `jobId` 缺失或状态值非法 | 不写库 | API 层 Bean Validation |
-| 409 | `ALREADY_APPLIED` | 同一学生同一岗位重复登记 | 拦截，不产生新记录 | AC-2 |
-| 409 | `INVALID_STATUS_TRANSITION` | 非法状态流转 | 拦截，原记录状态不变 | AC-3 |
+| 401 | -（无业务码） | 未登录或 Token 失效 | 不返回数据 | 通用鉴权 |
 
 > **越界声明**：M4 不负责判断该不该投、不生成面试日程（属 M6）、不发送提醒。
 
