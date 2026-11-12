@@ -353,6 +353,7 @@ API 层（Spring Boot 3.x Controller）
     }
   ]
 }
+```
 
 若无匹配岗位或画像无技能标签，data 返回空数组 []，不报错（AC-2）。
 
@@ -400,6 +401,7 @@ API 层（Spring Boot 3.x Controller）
     "createdAt": "2026-11-12T10:00:00"
   }
 }
+```
 
 **失败响应**
 
@@ -430,6 +432,7 @@ API 层（Spring Boot 3.x Controller）
     }
   ]
 }
+```
 
 若无投递记录，data 返回空数组 []，不报错（AC-5）。
 
