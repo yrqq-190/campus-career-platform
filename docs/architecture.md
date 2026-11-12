@@ -328,9 +328,271 @@ API 层（Spring Boot 3.x Controller）
 
 ### 4.6 M6 面试登记与多级提醒（主笔：卢果 · 待补）
 
-### 4.7 M7 面经外链（主笔：熊尚华 · 待补）
+### 4.7 M7 面经外链（主笔：熊尚华）
 
-### 4.8 M8 求职档案看板（主笔：熊尚华 · 待补）
+> 依据 `spec/module-07-interview-notes.md`。M7 只读 M2 画像方向用于排序，不调用 M1、M3–M6、M8，也不被其他模块依赖（辅助查询环节）。
+> 错误码说明：M7 spec 未定义大写业务错误码。外链失效、无匹配、画像缺失均为 200 空态或降级标记，**不是错误**；请求类拒绝由 API / 服务层校验返回，不新增 spec 之外的业务码（处理方式同 4.2.2）。
+> 分层归属：列表首屏 / 筛选 / 分页 ≤1 秒由 **API 层**响应时效保证（NFR-1）；24 小时探测、点击 3 秒判定、不抓正文合规在 **服务层**；API 层只做参数校验与鉴权，不写业务规则。
+
+**端点总览**
+
+| # | 方法 | URL | 用途 | 对应 spec |
+|---|---|---|---|---|
+| 1 | GET | `/api/v1/interview-notes` | 面经列表筛选、分页、分组展示 | AC-1、AC-3、AC-5；NFR-1、NFR-2 |
+| 2 | POST | `/api/v1/interview-notes` | 收录面经外链 | AC-1；边界行 3；NFR-4 |
+| 3 | GET | `/api/v1/interview-notes/{noteId}/reachability` | 点击实时校验（3 秒判失效） | AC-4；NFR-3 |
+
+#### 4.7.1 面经列表
+
+**URL**：`GET /api/v1/interview-notes`
+
+**请求**
+
+- Header：`Authorization: Bearer <JWT>`
+- Query：`position`、`direction`、`source`（筛选条件，均可空）；`page`（默认 1）、`pageSize`（默认 10，最大 100）
+
+**成功响应**：`200 OK`
+
+```json
+{
+  "code": "OK",
+  "requestId": "a1b2c3d4",
+  "data": {
+    "personalizationApplied": true,
+    "page": 1,
+    "pageSize": 10,
+    "total": 2,
+    "items": [
+      {
+        "noteId": "n_001",
+        "url": "https://example.com/interview/123",
+        "source": "某公开招聘社区",
+        "position": "后端开发",
+        "direction": "Java",
+        "linkStatus": "OK",
+        "lastProbedAt": "2026-11-12T08:00:00+08:00",
+        "nextProbeAt": "2026-11-13T08:00:00+08:00",
+        "isDemo": false
+      },
+      {
+        "noteId": "n_002",
+        "url": "https://example.com/interview/456",
+        "source": "某技术论坛",
+        "position": "后端开发",
+        "direction": "Java",
+        "linkStatus": "INVALID",
+        "lastProbedAt": "2026-11-12T08:00:00+08:00",
+        "nextProbeAt": "2026-11-13T08:00:00+08:00",
+        "isDemo": true
+      }
+    ]
+  }
+}
+```
+
+- 每条仅含外链与来源、检索条件，**不含正文**（FR-2）。
+- `linkStatus = INVALID` 表示 24 小时探测失效，记录置灰、不可点击，并带「来源已失效」标记（NFR-2）；该状态在 200 内返回，不是错误。
+- `isDemo = true` 为演示数据标识，不与真实数据混用（AC-5）。
+- 筛选无匹配时 `items = []`，空态不是错误（AC-3）；画像方向缺失时 `personalizationApplied = false`，不做个性化排序、返回默认列表，仍支持手动筛选（AC-3）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 400 | —（无业务码） | `pageSize > 100`、分页参数非法，或筛选参数格式错误 | 不查询、不写库 | API 层 Bean Validation；NFR-1 分页口径 |
+| 401 | —（无业务码） | 无 JWT 或 Token 失效 | 不返回列表数据 | API 层统一鉴权 |
+
+> 本端点无 spec 业务错误码；空态与降级均在 200 内表达，不造 404。
+
+#### 4.7.2 收录面经外链
+
+**URL**：`POST /api/v1/interview-notes`
+
+**请求**
+
+```json
+{
+  "url": "https://example.com/interview/123",
+  "source": "某公开招聘社区",
+  "position": "后端开发",
+  "direction": "Java"
+}
+```
+
+- 仅接受外链、来源与检索条件；不接受面经正文（`content`）字段（NFR-4）。
+
+**成功响应**：`201 Created`
+
+```json
+{
+  "code": "OK",
+  "requestId": "e5f6a7b8",
+  "data": {
+    "noteId": "n_003",
+    "linkStatus": "PENDING",
+    "lastProbedAt": null,
+    "nextProbeAt": "2026-11-13T15:00:00+08:00"
+  }
+}
+```
+
+- 新记录进入待探测状态，由后台 24 小时定时任务首次探测；收录过程不抓取、不缓存正文（FR-2、NFR-4）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 400 | —（无业务码） | `url` 非合法 http/https 链接，或请求体结构错误 | 不写库 | API 层参数校验；5.7「URL 非法」 |
+| 422 | —（无业务码） | `source` 来源字段缺失 | 拒绝入库并记录质量告警，不产生面经记录 | 边界行 3；AC-1 |
+| 422 | —（无业务码） | 请求携带面经正文（`content` / `body`）字段 | 一律拒绝，不存储正文 | NFR-4 |
+| 401 | —（无业务码） | 无 JWT 或 Token 失效 | 不写库 | API 层统一鉴权 |
+
+> 两个 422 触发条件与数据影响不同，分别对应来源缺失与正文合规，不共用业务码（spec 未定义业务码，故均由服务层校验拒绝）。
+
+#### 4.7.3 点击实时校验
+
+**URL**：`GET /api/v1/interview-notes/{noteId}/reachability`
+
+**请求**：Header 带 JWT，无 body。
+
+**成功响应**：`200 OK`
+
+外链可达：
+
+```json
+{
+  "code": "OK",
+  "data": { "noteId": "n_001", "reachable": true, "linkStatus": "OK", "checkedAt": "2026-11-12T15:10:00+08:00" }
+}
+```
+
+连接 3 秒无响应（降级，仍返回 200，不是错误）：
+
+```json
+{
+  "code": "OK",
+  "data": {
+    "noteId": "n_001",
+    "reachable": false,
+    "linkStatus": "INVALID",
+    "unreachableReason": "CONNECT_TIMEOUT_3S",
+    "retryKeyword": "后端开发",
+    "retryAvailable": true,
+    "checkedAt": "2026-11-12T15:10:03+08:00"
+  }
+}
+```
+
+- 连接无响应超过 3 秒判定不可达，按 AC-4 提供同关键词重检兜底（`retryKeyword`、`retryAvailable`），不长时间无反馈（NFR-3）。
+- 实时校验不修改记录，定时探测结果由后台任务更新（5.7「点击 3 秒不改库」）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 404 | —（无业务码） | `noteId` 指向不存在的记录 | 不写库 | API 层路径参数校验 |
+| 401 | —（无业务码） | 无 JWT 或 Token 失效 | 不返回数据 | API 层统一鉴权 |
+
+> 此处 404 针对「不存在的具体资源 ID」；列表筛选无匹配仍按 200 空数组处理，二者不冲突。
+
+> **越界声明**：M7 不定义岗位推荐与岗位外链（M3）、投递登记（M4）、模拟面试（M5）接口；不做全文检索、不评分。M7 只读取 M2 画像方向，不向其他模块推送数据。
+
+### 4.8 M8 求职档案看板（主笔：熊尚华）
+
+> 依据 `spec/module-08-dashboard.md`。M8 只读聚合 M1–M7（读只读视图 `v_dashboard` 与各源只读接口），不发起任何写操作，也不被其他模块依赖（输出出口）。
+> 业务错误码仅 1 个：`DASHBOARD_FORBIDDEN`（403，AC-6）。分区失败、空数据均为 200 降级或空态标记，**不是错误**；不新增 spec 之外的码。
+> 分层归属：分区聚合、首屏 3 秒、单分区 1 秒、失败重试在 **服务层**（M8 聚合属服务层，NFR-1、NFR-2）；API 层只做参数校验与鉴权，不写业务规则。
+
+**端点总览**
+
+| # | 方法 | URL | 用途 | 对应 spec |
+|---|---|---|---|---|
+| 1 | GET | `/api/v1/dashboard` | 看板全量分区聚合 | AC-1、AC-3、AC-4、AC-5；NFR-1、NFR-2 |
+| 2 | GET | `/api/v1/dashboard/sections/{section}` | 单分区查询与重试 | AC-7；NFR-2 |
+
+> 本模块不提供任何写端点。
+
+#### 4.8.1 看板全量
+
+**URL**：`GET /api/v1/dashboard`
+
+**请求**：Header 带 JWT，无 body。
+
+**成功响应**：`200 OK`
+
+```json
+{
+  "code": "OK",
+  "requestId": "c9d0e1f2",
+  "data": {
+    "studentId": "s_20260001",
+    "sections": [
+      { "section": "profile", "title": "求职画像", "status": "OK", "data": { "directions": ["后端开发"] } },
+      { "section": "applications", "title": "意向清单", "status": "OK",
+        "data": { "funnel": { "applied": 5, "interviewed": 2, "closed": 1 }, "highlights": ["已投递未约面：2"] } },
+      { "section": "interviews", "title": "面试安排", "status": "EMPTY", "data": null },
+      { "section": "reviews", "title": "复盘记录", "status": "FAILED", "retryable": true, "data": null }
+    ],
+    "renderedAt": "2026-11-12T15:20:00+08:00"
+  }
+}
+```
+
+- 四个固定分区：`profile` / `applications` / `interviews` / `reviews`。
+- 无数据分区 `status = EMPTY`、`data = null`（AC-3 空态，不是错误）；源数据加载失败分区 `status = FAILED`、`retryable = true` 并带重试入口（AC-7），与 EMPTY 明确区分，其余分区照常展示。
+- 突出「已投递未约面」「约面未复盘」等待办与关键状态（AC-4）。
+- 就业中心账号仅只读浏览，不出现编辑、审核与导出入口（AC-5）。
+- 首屏 3 秒内、单分区 1 秒内完成（NFR-1）；失败不返回编造的兜底数据（5.8）。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 403 | `DASHBOARD_FORBIDDEN` | 访问不属于自己的看板地址 | 不返回任何他人数据 | AC-6；NFR-4；边界行 5 |
+| 401 | —（无业务码） | 无 JWT 或 Token 失效 | 不返回数据 | API 层统一鉴权 |
+
+> 分区失败在 200 内以 `status = FAILED` 降级，不返回错误码；本端点唯一业务错误码为 `DASHBOARD_FORBIDDEN`。
+
+#### 4.8.2 单分区查询与重试
+
+**URL**：`GET /api/v1/dashboard/sections/{section}`
+
+**请求**
+
+- Header：`Authorization: Bearer <JWT>`
+- 路径参数：`section` ∈ {`profile`, `applications`, `interviews`, `reviews`}
+
+**成功响应**：`200 OK`
+
+```json
+{
+  "code": "OK",
+  "data": { "section": "reviews", "status": "OK", "data": [ { "interviewId": "i_001", "summary": "..." } ] }
+}
+```
+
+- 分区无数据：`status = EMPTY`、`data = null`（AC-3）。
+- 分区源数据失败：`status = FAILED`、`retryable = true`，点击重试后 10 秒内返回结果或再次失败提示（AC-7、NFR-2），不阻塞其他分区。
+
+**失败响应**
+
+| 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
+|---|---|---|---|---|
+| 400 | —（无业务码） | `section` 不在四个合法分区内 | 不查询、不写库 | API 层参数校验 |
+| 403 | `DASHBOARD_FORBIDDEN` | 越权访问他人分区 | 不返回他人数据 | AC-6；NFR-4；边界行 5 |
+| 401 | —（无业务码） | 无 JWT 或 Token 失效 | 不返回数据 | API 层统一鉴权 |
+
+#### 4.8.3 写请求拒绝（只读约束）
+
+- 对本模块所有路径发起的写方法（`POST` / `PUT` / `PATCH` / `DELETE`）：返回 `405 Method Not Allowed`。
+- 错误码：—（无业务码，API 层统一拒绝）。
+- 数据影响：不产生任何数据变更；业务库对看板服务仅授予读权限（NFR-3）。
+- 出处：NFR-3；AC-2（编辑跳回源模块）；边界行 2。
+
+> **越界声明**：M8 不定义任何数据新增、修改、删除接口，编辑操作跳回对应源模块（M1–M7）完成；不提供数据导出、审核（后置 P1）与企业端管理，不引入新的数据采集。
+
+
+
 
 ## 5. 数据流
 
