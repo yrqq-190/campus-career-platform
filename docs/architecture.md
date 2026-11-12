@@ -338,35 +338,50 @@ API 层（Spring Boot 3.x Controller）
 
 ### 5.1 M1 简历上传与解析
 
+M1 分两步：上传进暂存区 → 学生确认后写正式档案。
+
 **成功路径**
-1. 展示层选择文件 → API 层 `POST /api/resumes`
+1. 展示层选择文件 → `POST /api/v1/resumes`
 2. API 层仅做传输层防护：文件字段存在性、请求体大小硬上限（防超大请求打爆内存），不做业务判定
-3. 服务层执行业务校验：扩展名 ∈ {pdf, docx}、大小 ≤ 10MB，再抽取纯文本 → 调用大模型结构化输出 → JSON Schema 校验
-4. 写 `resume` 表（同一学生覆盖更新）→ 返回解析结果
-5. 展示层进入确认页，学生可修正后保存
+3. 服务层执行业务校验（扩展名白名单、≤10MB、可读性）→ 抽取纯文本 → 调大模型结构化输出 → JSON Schema 校验
+4. 写暂存区，`status = PENDING_CONFIRM`，正式档案不变（AC-1）
+5. 返回解析结果 → 展示层进确认页，学生逐项修改
+6. 学生保存 → `POST /api/v1/resumes/confirm` → 写正式档案，`status = CONFIRMED`（AC-2）
 
 **失败路径**
 
 | 情形 | 返回 | 数据影响 | 可否重试 |
 |---|---|---|---|
-| 文件 > 10MB | 413 `RESUME_TOO_LARGE` | 不落库，不留临时文件 | 换文件重试 |
-| 扩展名不在白名单 | 415 `RESUME_FORMAT_UNSUPPORTED` | 不落库 | 换文件重试 |
-| 大模型超时 | 504 `PARSE_TIMEOUT` | 不落库，原 resume 不变 | 可重试，重复上传覆盖同一条，不新增 |
+| 文件 > 10MB（恰好 10MB 放行） | 413 `RESUME_TOO_LARGE` | 不落盘、不建档 | 换文件重试 |
+| 非 PDF / Word，或伪装扩展名 | 415 `RESUME_FORMAT_UNSUPPORTED` | 不落盘、不建档 | 换文件重试 |
+| 文件有打开密码 / 0 字节 / 已损坏 | 415 `RESUME_UNREADABLE` | 不落盘、不建档 | 换文件重试 |
+| 大模型 30 秒超时，重试 2 次仍失败 | 504 `PARSE_TIMEOUT` | 不落盘，原档案不变 | 可重试 |
+| 模型输出非法 JSON 或未过 Schema | 502 `MODEL_OUTPUT_INVALID` | 不展示半成品，原档案不变 | 可重试 |
+| 解析完成但四类字段全空 | 422 `NO_VALID_FIELD` | 不生成空档案 | 换简历重试 |
+
+> 6 个码即 M1 全部业务错误码，与 spec「边界与异常」表逐行对应，无自造码。
 
 ### 5.2 M2 霍兰德问卷与画像
 
+M2 有 5 个端点：取题续答、单题保存、提交计分、读画像、重新生成。
+
 **成功路径**
-1. 展示层提交 30 题答案 → `POST /api/holland/answers`
-2. API 层校验请求结构完整（字段存在、题号为数字），不做业务判定
-3. 服务层校验题数与选项合法性 → 计分（RIASEC 六维）→ 首次提交时写 `holland_profile`，`student_id` 唯一约束保证一人一份
-4. 返回六维画像 → 展示层渲染雷达图
+1. `GET /api/v1/holland/questions` 取 30 题与已存作答，支持断点续答（AC-4）
+2. `PUT /api/v1/holland/answers` 单题即时保存，无需「保存草稿」按钮（FR-2）
+3. `POST /api/v1/holland/submissions` 提交 → 服务层计分、追溯校验、合成画像 → `201 Created`
+4. `GET /api/v1/holland/profile` 读取当前画像
+5. 重测走 `POST /api/v1/holland/profile/regenerate`，整体替换旧画像（AC-3）
 
 **失败路径**
 
 | 情形 | 返回 | 数据影响 | 可否重试 |
 |---|---|---|---|
-| 题数不足 / 选项越界 | 400 `QUIZ_INCOMPLETE` | 不写库，原画像不变 | 补齐后重试 |
-| 重复提交 | 409 `QUIZ_DUPLICATE_SUBMIT` | 不写库，原画像不变 | 不可重试，页面提示已提交 |
+| 30 题未全部作答 | 422 `QUIZ_INCOMPLETE` | 不生成画像，已答题目保留 | 补齐后重试 |
+| 已提交后再次修改作答 | 409 `QUIZ_DUPLICATE_SUBMIT` | 不覆盖已提交版本 | 不可重试，提示改走重测 |
+| 评分无法追溯到作答 | 422 `SCORE_NOT_TRACEABLE` | 不落库 | 可重试 |
+| 画像专业与技能缺失 | 200 + `PROFILE_SKILL_MISSING` | 正常返回，标降级标记 | 不算错误，无需重试 |
+
+> `PROFILE_SKILL_MISSING` 是 200 响应中的降级标记，不是错误码（AC-5）。
 
 ### 5.3 M3 岗位推荐与外链
 
