@@ -23,7 +23,7 @@
 | 1 | M1 上传解析 | `POST /api/v1/resumes` · 415 `RESUME_FORMAT_UNSUPPORTED` / 415 `RESUME_UNREADABLE` / 413 `RESUME_TOO_LARGE` / 504 `PARSE_TIMEOUT` / 502 `MODEL_OUTPUT_INVALID` / 422 `NO_VALID_FIELD` | module-01 AC-3、AC-5～AC-8；边界行 1–8 | 一致 |
 | 2 | M1 确认入库 | `POST /api/v1/resumes/confirm` · 422 `NO_VALID_FIELD` | module-01 FR-5；AC-8 | 一致 |
 | 3 | M1 读取档案 | `GET /api/v1/resumes/current` · 无业务码（未建档返回 `data: null`，不返 404） | module-01 AC-2、AC-4 | 一致 |
-| 4 | M2 作答与提交 | `PUT /api/v1/holland/answers`（单题保存）· `POST /api/v1/holland/submissions`（提交计分）· 422 `QUIZ_INCOMPLETE` / 409 `QUIZ_DUPLICATE_SUBMIT` / 422 `SCORE_NOT_TRACEABLE` | module-02 AC-6、AC-7 | 一致 |
+| 4 | M2 作答与提交 | `PUT /api/v1/holland/answers`（单题保存）· `POST /api/v1/holland/submissions`（提交计分）· 422 `QUIZ_INCOMPLETE` / 409 `QUIZ_DUPLICATE_SUBMIT` / 500 `SCORE_NOT_TRACEABLE` | module-02 AC-6、AC-7、AC-8 | 一致 |
 | 5 | M2 画像降级 | `GET /api/v1/holland/profile` · 200 + `PROFILE_SKILL_MISSING`（降级标记，不是错误码） | module-02 AC-5；边界表 | 一致 |
 | 6 | M3 岗位推荐 | `GET /api/v1/jobs/recommendations` · 404 `JOB_LINK_INVALID`；200 + `PROFILE_SKILL_MISSING`（降级标记，非错误码） | module-03 AC-2、AC-3 | 一致 |
 | 7 | M4 投递登记 | `POST /api/v1/applications` · `GET /api/v1/applications` · 409 `ALREADY_APPLIED` / 409 `INVALID_STATUS_TRANSITION` | module-04 AC-2、AC-3 | 一致 |
