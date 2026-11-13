@@ -407,8 +407,8 @@ API 层（Spring Boot 3.x Controller）
 | 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
 |---|---|---|---|---|
 | 400 | -（无业务码） | `jobId` 缺失或状态值非法 | 不写库 | API 层 Bean Validation |
-| 409 | `DUPLICATE_APPLICATION` | 同一学生同一岗位重复提交 | 拦截，返回已存在记录 ID，不产生新记录 | AC-3；边界行 1 |
-| 409 | `INVALID_STATUS_TRANSITION` | 非法状态流转（如 已投递 → 已投递） | 拦截，原记录状态不变 | 边界行 2 |
+| 409 | `ALREADY_APPLIED` | 同一学生同一岗位重复登记（唯一约束冲突） | 拦截，不产生新记录 | AC-2 |
+| 409 | `INVALID_STATUS_TRANSITION` | 非法状态流转 | 拦截，原记录状态不变 | AC-3 |
 
 #### 4.4.2 查询投递记录列表
 
