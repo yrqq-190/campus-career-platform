@@ -67,6 +67,7 @@ API 层（Spring Boot 3.x Controller）
 > 依据 `spec/module-01-resume-parse.md`。M1 不调用 M2–M8 任何模块；只被 M2 读取「已确认」的档案。
 > 错误码全部取自该 spec 的 AC-3 / AC-5 / AC-6 / AC-7 / AC-8 与「边界与异常」表，**不新增表中没有的码**。
 > 分层归属：扩展名白名单、文件头比对、10MB 上限、文件可读性判定属**服务层**（第 2 章「服务层」已明确含 10MB 校验）；multipart 结构合法性属 **API 层参数校验**，不承载业务规则。
+
 **端点总览**
 
 | # | 方法 | URL | 用途 | 对应 spec |
@@ -83,8 +84,6 @@ API 层（Spring Boot 3.x Controller）
 
 - Header：`Authorization: Bearer <JWT>`；`Content-Type: multipart/form-data`
 - Body：`file` 单文件；扩展名 ∈ {`pdf`, `doc`, `docx`}；实际文件类型须与扩展名一致；大小 ≤ `MAX_RESUME_SIZE = 10MB`
-
-
 
 **成功响应**：`201 Created`
 
@@ -160,7 +159,9 @@ DOCX 与普通 zip 包的开头字节相同，只看开头分不出来。因此 
 3. 收到 504 `PARSE_TIMEOUT` 或 502 `MODEL_OUTPUT_INVALID` 时，展示可读提示与重试入口，重试仍调用 `POST /api/v1/resumes`，不新增端点，也不展示任何解析字段。
 
 超时提示文案与 AC-6 一致，为「解析超时，请稍后重试」。前端判断走哪个分支依据统一失败响应体的 `code` 字段，该响应体已在本节定义，不新增字段。
+
 #### 4.1.2 确认入库
+
 
 **URL**：`POST /api/v1/resumes/confirm`
 
