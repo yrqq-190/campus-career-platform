@@ -112,20 +112,20 @@ M1 → M2 → M3 → M7 → M4 → M5 → M6 → M8
 
 ## 4. 风险表（D3 终稿）
 
-> D1 先确定风险主题与四列表头；D3 按「影响 / 应对 / 负责人 / 验证方式」逐条补齐，不留空格。
+> D1 先确定风险主题；D3 按模板补 ID、概率 两列，并逐条补齐「影响 / 应对 / 负责人 / 验证方式」，不留空格。
 
 D3 须覆盖的 8 个风险主题（对应任务分配表）：并发、幂等、大模型超时、外链失效、空数据、越权、AI 风格割裂、实例与库限制。
 
-| 风险主题 | 影响 | 应对 | 负责人 | 验证方式 |
-|---|---|---|---|---|
-| 并发 | M4 同一学生同一岗位并发登记，可能产生重复投递记录、状态流转竞争 | 乐观锁 version 控制并发状态流转，冲突返回 409 INVALID_STATUS_TRANSITION；唯一约束 (student_id, job_id) 兜底（ADR-001） | 赵蔚 | S1 探针 10 线程×100 轮：写入恒为 1、500 为 0；版本号冲突返回 409 且字段不变 |
-| 幂等 | 连点或重复提交导致重复记录 | 数据库唯一约束 (student_id, job_id) 硬拦截，捕获 DuplicateKeyException 返回 409 ALREADY_APPLIED，不产生新记录（ADR-001） | 赵蔚 | S1 实测 100 轮：2xx=100、409 ALREADY_APPLIED=900、写入恒为 1、500=0 |
-| 大模型超时 | M1 等调用大模型延迟或超时，系统卡死、白屏占线程 | 30 秒超时、最多重试 2 次、间隔 1 秒，耗尽返回 504 PARSE_TIMEOUT；前端 Loading、按钮置灰、超时提示（ADR-002） | 卢果、贾小舒 | S4 实测：单次 30s 触发超时、三次 92s 返回 504，均有 Loading 且按钮置灰 |
-| 外链失效 | M7 面经外链打不开或失效，点击无响应 | 24 小时探测、点击 3 秒判失效，200 内返回 linkStatus=INVALID 置灰标记，不整页报错；SSRF 统一校验 | 熊尚华 | D4 用例：置一条失效外链，点开断言 200 + linkStatus=INVALID、不整页报错（S2 探针兜底） |
-| 空数据 | 画像算不出专业/技能标签时按错误处理会 500 中断、学生卡画像页；直接返空数组则 M3 排不出岗位、M8 整屏空白 | M2 合成后仍返 200、body 带降级标记 PROFILE_SKILL_MISSING（AC-5，标记非错误码），前端显示「技能标签待补充」；M3 拿不到画像按霍兰德类型单维召回并提示降级；M8 无数据返空数组+空态文案，不返 500 | 贾小舒、熊尚华 | D4 用例：不含技能关键词简历跑 M1→M2 断言 200 且含 PROFILE_SKILL_MISSING、页面无报错；新学生无投递 GET /api/v1/dashboard 断言 200+各分区空数组 |
-| 越权 | 学生改请求体 resumeId 或换身份即可读写他人数据，简历含手机号/邮箱/教育经历，越权即隐私事故 | 所有学生数据端点从 JWT 取 studentId、不接受请求体传入；M1 POST /resumes/confirm 带 resumeId 校验归属当前学生、不属返 404、写库以 student_id 为准 upsert；M1 读接口无记录返 data:null；M8 越权返 403 DASHBOARD_FORBIDDEN（AC-6、NFR-4、边界行 5） | 贾小舒、熊尚华 | D4 用例：学生 B token 提交学生 A resumeId 调 confirm 断言 404 且 A 档案时间戳未变；他人身份请求 M8 断言 403 DASHBOARD_FORBIDDEN 且响应体不含业务字段 |
-| AI 风格割裂 | 大模型返回自然语言、格式漂移或幻觉，JSON 解析报 500、多模块风格不一致 | 强制结构化 JSON，过 JSON Schema 校验才返回或入库，失败返回 502 MODEL_OUTPUT_INVALID，原档案不变（ADR-002） | 卢果、贾小舒 | S4 实测非法 JSON 1.2s 返回 502，有格式异常提示与重试入口 |
-| 实例与库限制 | 单实例部署、文件与库容量约束，超量或非法文件、并发上限 | M1 单份 >10MB 返回 413 RESUME_TOO_LARGE、非 PDF/Word 返回 415 RESUME_FORMAT_UNSUPPORTED；单模块可独立部署，不引入 Redis/MQ，RDS 独立隔离 | 贾小舒、赵蔚 | D4 用例：上传 10MB+1KB 断言 413、非 PDF/Word 断言 415（S1 单实例实测数据兜底） |
+| ID | 风险主题 | 概率 | 影响 | 应对 | 负责人 | 验证方式 |
+|---|---|---|---|---|---|---|
+| R1 | 并发 | 中 | M4 同一学生同一岗位并发登记，可能产生重复投递记录、状态流转竞争 | 乐观锁 version 控制并发状态流转，冲突返回 409 INVALID_STATUS_TRANSITION；唯一约束 (student_id, job_id) 兜底（ADR-001） | 赵蔚 | S1 探针 10 线程×100 轮：写入恒为 1、500 为 0；版本号冲突返回 409 且字段不变 |
+| R2 | 幂等 | 高 | 连点或重复提交导致重复记录 | 数据库唯一约束 (student_id, job_id) 硬拦截，捕获 DuplicateKeyException 返回 409 ALREADY_APPLIED，不产生新记录（ADR-001） | 赵蔚 | S1 实测 100 轮：2xx=100、409 ALREADY_APPLIED=900、写入恒为 1、500=0 |
+| R3 | 大模型超时 | 高 | M1 等调用大模型延迟或超时，系统卡死、白屏占线程 | 30 秒超时、最多重试 2 次、间隔 1 秒，耗尽返回 504 PARSE_TIMEOUT；前端 Loading、按钮置灰、超时提示（ADR-002） | 卢果、贾小舒 | S4 实测：单次 30s 触发超时、三次 92s 返回 504，均有 Loading 且按钮置灰 |
+| R4 | 外链失效 | 高 | M7 面经外链打不开或失效，点击无响应 | 24 小时探测、点击 3 秒判失效，200 内返回 linkStatus=INVALID 置灰标记，不整页报错；SSRF 统一校验 | 熊尚华 | D4 用例：置一条失效外链，点开断言 200 + linkStatus=INVALID、不整页报错（S2 探针兜底） |
+| R5 | 空数据 | 高 | 画像算不出专业/技能标签时按错误处理会 500 中断、学生卡画像页；直接返空数组则 M3 排不出岗位、M8 整屏空白 | M2 合成后仍返 200、body 带降级标记 PROFILE_SKILL_MISSING（AC-5，标记非错误码），前端显示「技能标签待补充」；M3 拿不到画像按霍兰德类型单维召回并提示降级；M8 无数据返空数组+空态文案，不返 500 | 贾小舒、熊尚华 | D4 用例：不含技能关键词简历跑 M1→M2 断言 200 且含 PROFILE_SKILL_MISSING、页面无报错；新学生无投递 GET /api/v1/dashboard 断言 200+各分区空数组 |
+| R6 | 越权 | 低 | 学生改请求体 resumeId 或换身份即可读写他人数据，简历含手机号/邮箱/教育经历，越权即隐私事故 | 所有学生数据端点从 JWT 取 studentId、不接受请求体传入；M1 POST /resumes/confirm 带 resumeId 校验归属当前学生、不属返 404、写库以 student_id 为准 upsert；M1 读接口无记录返 data:null；M8 越权返 403 DASHBOARD_FORBIDDEN（AC-6、NFR-4、边界行 5） | 贾小舒、熊尚华 | D4 用例：学生 B token 提交学生 A resumeId 调 confirm 断言 404 且 A 档案时间戳未变；他人身份请求 M8 断言 403 DASHBOARD_FORBIDDEN 且响应体不含业务字段 |
+| R7 | AI 风格割裂 | 中 | 大模型返回自然语言、格式漂移或幻觉，JSON 解析报 500、多模块风格不一致 | 强制结构化 JSON，过 JSON Schema 校验才返回或入库，失败返回 502 MODEL_OUTPUT_INVALID，原档案不变（ADR-002） | 卢果、贾小舒 | S4 实测非法 JSON 1.2s 返回 502，有格式异常提示与重试入口 |
+| R8 | 实例与库限制 | 中 | 单实例部署、文件与库容量约束，超量或非法文件、并发上限 | M1 单份 >10MB 返回 413 RESUME_TOO_LARGE、非 PDF/Word 返回 415 RESUME_FORMAT_UNSUPPORTED；单模块可独立部署，不引入 Redis/MQ，RDS 独立隔离 | 贾小舒、赵蔚 | D4 用例：上传 10MB+1KB 断言 413、非 PDF/Word 断言 415（S1 单实例实测数据兜底） |
 
 ## 5. 验证方式
 
