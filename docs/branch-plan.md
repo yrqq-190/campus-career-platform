@@ -2,7 +2,7 @@
 
 > 归属：颜睿卿（第 9 周分支规划责任人，见四天分工表第四节 / 课件 P5 第 5 项）
 > 依据：`plans/mvp1-plan.md` 的 12 个任务、`docs/architecture.md` 冻结范围（§8）
-> 版本：v1.0（2026-11-19）
+> 版本：v1.1（2026-11-20，与 `plans/mvp1-plan.md` v1.2 同步，回填 T2–T5 的 Issue 编号 #103–#106）
 > 范围：仅 T1–T12，不含语音面试、企业端、自建岗位库、社区（MVP2）
 
 ## 一、命名规则
@@ -31,10 +31,10 @@
 | 任务 | 分支名 | 从哪切出 | 合并去向 | 负责人 | 本周开工 |
 |---|---|---|---|---|---|
 | T1 | `feature/issue-<T1>-data-schema` | `main` | `main` | 陈雪 | **是**（11.21 起，真实实现） |
-| T2 | `feature/issue-<T2>-m1-upload-parse` | `main` | `main` | 贾小舒 | **是**（11.21 起，真实实现） |
-| T3 | `feature/issue-<T3>-m1-parse-fallback` | `main` | `main` | 贾小舒 | 否（等 T2 合并） |
-| T4 | `feature/issue-<T4>-m2-quiz` | `main` | `main` | 贾小舒 | 否（等 T2） |
-| T5 | `feature/issue-<T5>-m2-profile` | `main` | `main` | 贾小舒 | 否（等 T4） |
+| T2 | `feature/issue-103-m1-upload-parse` | `main` | `main` | 贾小舒 | **是**（11.21 起，真实实现） |
+| T3 | `feature/issue-104-m1-parse-fallback` | `main` | `main` | 贾小舒 | 否（等 T2 合并） |
+| T4 | `feature/issue-105-m2-quiz` | `main` | `main` | 贾小舒 | 否（等 T2） |
+| T5 | `feature/issue-106-m2-profile` | `main` | `main` | 贾小舒 | 否（等 T4） |
 | T6 | `feature/issue-<T6>-m3-recommend-list` | `main` | `main` | 赵蔚 | **契约骨架 + Mock** |
 | T7 | `feature/issue-<T7>-m3-link-fallback` | `main` | `main` | 赵蔚 | 否（等 T6） |
 | T8 | `feature/issue-<T8>-m4-application` | `main` | `main` | 赵蔚 | 否（等 T6） |
@@ -101,3 +101,4 @@ git branch -r | grep -oE 'origin/[a-z]+/issue-[0-9]+-[a-z0-9-]+$'
 | 日期 | 内容 | 人 |
 |---|---|---|
 | 2026-11-19 | 初版：命名规则 5 前缀 + 12 条分支 + 切出/合并规则 + 合规自检 | 颜睿卿 |
+| 2026-11-20 | v1.1：T2–T5 回填为 #103–#106（与 `plans/mvp1-plan.md` v1.2 一致）；其余 8 条仍为 `<Tn>` 占位，待对应 Issue 建出后回填 | 颜睿卿 |
