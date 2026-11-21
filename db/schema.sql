@@ -1,24 +1,38 @@
 -- =============================================================
--- T1 / Issue #107  MVP1 数据库结构 v1.0
--- 依据：docs/architecture.md 第 3 章「核心数据实体」8 张表
---       + spec/module-01/02/04/05/06/07 的字段与约束要求
+-- T1 / Issue #107  MVP1 数据库结构 v2.0
+-- 依据：docs/architecture.md 第 3 章 8 个实体
+--       + spec/module-01/02/04/06/07 的字段、枚举与约束
 -- 数据库：MySQL 8.0 / InnoDB / utf8mb4
 --
--- 本版已定的 4 处判断（原草案末尾的「待拍板」）：
--- 1. student 增加 role 列，默认 STUDENT；spec 无登录要求，故不建密码列。
--- 2. 不建 recommendation 表：architecture 第 3 章无该实体，推荐结果实时计算，
---    推荐理由由 M3 接口按需返回，不落库。
--- 3. application.status 用 VARCHAR(24)，合法取值待 T8 主笔确认后写入注释，
---    本版不写死枚举，避免与 spec 冲突。
--- 4. reminder.node_type 按「4 节点 + 复盘」定为
---    T_MINUS_24H / T_MINUS_3H / T_MINUS_1H / START / REVIEW，
---    待 T10 主笔对照 module-06 节点枚举映射表核对后冻结。
+-- v2.0 相对 v1.0 的变更（按 PR #118 评审意见，共 13 条）：
+-- 【必须改】
+-- 1. reminder.node_type 五个值改为 module-06 枚举表原文：
+--    D3 / D1 / H2_DEPARTURE / M30 / POST_REVIEW
+-- 2. resume.skill_empty 改为 STORED 生成列，由 parsed_skill 自动维护，
+--    避免学生确认环节增删技能后仍判为「技能为空」（M1 FR-6 / AC-4，M2 AC-5）
+-- 3. 8 张表全部加 IF NOT EXISTS，满足 #107「重复执行不报错」
+-- 4. GRANT 拆到 db/grants.sql，不混进建表脚本
+-- 5. v_dashboard 的 SUM(CASE...) 改为 COUNT(DISTINCT CASE...)，避免 JOIN 扇出放大
+-- 6. resume 补 parsed_project（项目经历），M1 AC-1 四类字段齐全
+-- 7. resume 加 UNIQUE KEY uk_resume_student
+-- 8. interview 补 location、format（architecture 4.6.1 请求体）
+-- 9. interview.status 补 RESCHEDULED（4.6.2 改期返回）
+-- 10. holland_profile 补 recommend_dirs / intent_cities / expected_industry / skill_gaps
+-- 【走变更流程，不在本脚本】
+-- 11. 问卷作答明细表（M2 FR-2/AC-1/AC-4/AC-8 需要）—— 单开 Issue，先改 spec 与 architecture 第 3 章
+-- 12. 模拟面试会话 / 报告表（T9 报告归档）—— 同上
+-- 【口径修正】
+-- 13. #107 第 2 条验收标准改为「字段覆盖各模块 spec 中出现的字段，以 spec 为准」
 -- =============================================================
 
 SET NAMES utf8mb4;
 
+-- 库名可按环境替换；重复执行不报错
+CREATE DATABASE IF NOT EXISTS campus_career DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_general_ci;
+USE campus_career;
+
 -- ---------- 1. student 学生账号 ----------
-CREATE TABLE student (
+CREATE TABLE IF NOT EXISTS student (
   id            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
   student_no    VARCHAR(32)  NOT NULL                COMMENT '学号，唯一',
   name          VARCHAR(64)  NOT NULL                COMMENT '姓名',
@@ -34,7 +48,7 @@ CREATE TABLE student (
 
 -- ---------- 2. resume 简历与解析结果 ----------
 -- 每个学生一份有效简历；解析结果停在待确认态，确认后才对下游生效（M1 AC-2）
-CREATE TABLE resume (
+CREATE TABLE IF NOT EXISTS resume (
   id             BIGINT       NOT NULL AUTO_INCREMENT,
   student_id     BIGINT       NOT NULL COMMENT '所属学生',
   file_name      VARCHAR(255) NOT NULL COMMENT '原始文件名',
@@ -42,40 +56,47 @@ CREATE TABLE resume (
   file_size      INT          NOT NULL COMMENT '字节数，超限由应用层拦 413 RESUME_TOO_LARGE',
   parsed_basic   JSON         NULL     COMMENT '基本信息（姓名/联系方式等）',
   parsed_edu     JSON         NULL     COMMENT '教育经历',
+  parsed_skill   JSON         NULL     COMMENT '专业技能，可为空数组；确认环节可增删',
+  parsed_project JSON         NULL     COMMENT '项目经历（M1 AC-1 四类之一）',
   parsed_exp     JSON         NULL     COMMENT '实习/工作经历',
-  parsed_skill   JSON         NULL     COMMENT '技能列表，可为空数组',
-  skill_empty    TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '1=技能字段为空，供 M2 AC-5 降级判定',
+  skill_empty    TINYINT(1)   GENERATED ALWAYS AS
+                 (CASE WHEN parsed_skill IS NULL OR JSON_LENGTH(parsed_skill) = 0 THEN 1 ELSE 0 END) STORED
+                 COMMENT '1=技能为空，由 parsed_skill 自动维护，供 M2 AC-5 降级判定',
   confirm_status VARCHAR(16)  NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING 待确认 / CONFIRMED 已确认',
   parsed_at      DATETIME     NULL     COMMENT '解析完成时间',
   created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  KEY idx_resume_student (student_id),
+  UNIQUE KEY uk_resume_student (student_id),
   CONSTRAINT fk_resume_student FOREIGN KEY (student_id) REFERENCES student (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='简历与解析结果';
 
--- ---------- 3. holland_profile 霍兰德六维画像 ----------
+-- ---------- 3. holland_profile 霍兰德画像 ----------
 -- 与 student 一对一；重新生成时整体替换（M2 AC-3），不保留历史行
-CREATE TABLE holland_profile (
-  id            BIGINT      NOT NULL AUTO_INCREMENT,
-  student_id    BIGINT      NOT NULL,
-  score_r       TINYINT     NOT NULL DEFAULT 0 COMMENT '现实型',
-  score_i       TINYINT     NOT NULL DEFAULT 0 COMMENT '研究型',
-  score_a       TINYINT     NOT NULL DEFAULT 0 COMMENT '艺术型',
-  score_s       TINYINT     NOT NULL DEFAULT 0 COMMENT '社会型',
-  score_e       TINYINT     NOT NULL DEFAULT 0 COMMENT '企业型',
-  score_c       TINYINT     NOT NULL DEFAULT 0 COMMENT '常规型',
-  top_dimension CHAR(1)     NOT NULL COMMENT 'R/I/A/S/E/C 中最高维',
-  skill_missing TINYINT(1)  NOT NULL DEFAULT 0 COMMENT '1=简历技能为空，画像降级（M2 AC-5）',
-  revision      INT         NOT NULL DEFAULT 1 COMMENT '第几次生成，重新生成时 +1 并整体替换',
-  generated_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE IF NOT EXISTS holland_profile (
+  id                BIGINT      NOT NULL AUTO_INCREMENT,
+  student_id        BIGINT      NOT NULL,
+  score_r           TINYINT     NOT NULL DEFAULT 0 COMMENT '现实型',
+  score_i           TINYINT     NOT NULL DEFAULT 0 COMMENT '研究型',
+  score_a           TINYINT     NOT NULL DEFAULT 0 COMMENT '艺术型',
+  score_s           TINYINT     NOT NULL DEFAULT 0 COMMENT '社会型',
+  score_e           TINYINT     NOT NULL DEFAULT 0 COMMENT '企业型',
+  score_c           TINYINT     NOT NULL DEFAULT 0 COMMENT '常规型',
+  top_dimension     CHAR(1)     NOT NULL COMMENT 'R/I/A/S/E/C 中最高维',
+  recommend_dirs    JSON        NULL     COMMENT '推荐方向（M2 画像四项之一）',
+  intent_cities     JSON        NULL     COMMENT '意向城市（学生问卷填写）',
+  expected_industry VARCHAR(128) NULL    COMMENT '期望行业',
+  skill_gaps        JSON        NULL     COMMENT '技能短板（M2 FR-6 四项之一）',
+  skill_missing     TINYINT(1)  NOT NULL DEFAULT 0 COMMENT '1=简历技能为空，画像降级（M2 AC-5）',
+  revision          INT         NOT NULL DEFAULT 1 COMMENT '第几次生成，重新生成时 +1 并整体替换',
+  generated_at      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uk_holland_student (student_id),
   CONSTRAINT fk_holland_student FOREIGN KEY (student_id) REFERENCES student (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='霍兰德六维画像';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='霍兰德画像';
 
 -- ---------- 4. job 岗位外链元数据 ----------
-CREATE TABLE job (
+CREATE TABLE IF NOT EXISTS job (
   id              BIGINT       NOT NULL AUTO_INCREMENT,
   title           VARCHAR(128) NOT NULL COMMENT '岗位名称',
   company         VARCHAR(128) NULL,
@@ -94,11 +115,11 @@ CREATE TABLE job (
 
 -- ---------- 5. application 投递记录 ----------
 -- 唯一约束防重复投递（M4 AC-2/AC-3；ADR-001：唯一约束 + 乐观锁）
-CREATE TABLE application (
+CREATE TABLE IF NOT EXISTS application (
   id          BIGINT      NOT NULL AUTO_INCREMENT,
   student_id  BIGINT      NOT NULL,
   job_id      BIGINT      NOT NULL,
-  status      VARCHAR(24) NOT NULL DEFAULT 'APPLIED' COMMENT '投递状态；非法流转返 409 INVALID_STATUS_TRANSITION，取值集合待 T8 确认',
+  status      VARCHAR(24) NOT NULL DEFAULT 'APPLIED' COMMENT '投递状态；非法流转返 409 INVALID_STATUS_TRANSITION；取值集合待 T8 确认',
   applied_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   version     INT         NOT NULL DEFAULT 0 COMMENT '乐观锁版本号（ADR-001）',
@@ -110,14 +131,16 @@ CREATE TABLE application (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='投递记录';
 
 -- ---------- 6. interview 面试登记 ----------
-CREATE TABLE interview (
+CREATE TABLE IF NOT EXISTS interview (
   id             BIGINT       NOT NULL AUTO_INCREMENT,
   student_id     BIGINT       NOT NULL,
   company        VARCHAR(128) NOT NULL,
   position       VARCHAR(128) NULL,
+  location       VARCHAR(255) NULL     COMMENT '面试地点；边界表有「未填面试地点」',
+  format         VARCHAR(32)  NULL     COMMENT '面试形式，如 ONSITE/ONLINE/PHONE',
   start_time     DATETIME     NOT NULL COMMENT '面试开始时间',
   departure_time DATETIME     NULL     COMMENT '出发时间；为空时按开始时间前推计算（M6 NFR-1）',
-  status         VARCHAR(16)  NOT NULL DEFAULT 'SCHEDULED' COMMENT 'SCHEDULED/CANCELED/DONE',
+  status         VARCHAR(16)  NOT NULL DEFAULT 'SCHEDULED' COMMENT 'SCHEDULED/RESCHEDULED/CANCELED/DONE（4.6.2 改期返回 RESCHEDULED）',
   created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -128,10 +151,10 @@ CREATE TABLE interview (
 
 -- ---------- 7. reminder 提醒任务 ----------
 -- 5 次触发 = 4 个节点 + 复盘；唯一约束防重复触发（M6）
-CREATE TABLE reminder (
+CREATE TABLE IF NOT EXISTS reminder (
   id           BIGINT       NOT NULL AUTO_INCREMENT,
   interview_id BIGINT       NOT NULL,
-  node_type    VARCHAR(24)  NOT NULL COMMENT 'T_MINUS_24H/T_MINUS_3H/T_MINUS_1H/START/REVIEW，待 T10 对照 module-06 冻结',
+  node_type    VARCHAR(24)  NOT NULL COMMENT 'module-06 枚举：D3 前3天 / D1 前1天 / H2_DEPARTURE 前2小时按出发时间倒推 / M30 前30分钟 / POST_REVIEW 结束后复盘',
   remind_at    DATETIME     NOT NULL COMMENT '计划触发时间',
   sent_at      DATETIME     NULL     COMMENT '实际发送时间',
   status       VARCHAR(16)  NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/SENT/FAILED',
@@ -145,7 +168,7 @@ CREATE TABLE reminder (
 
 -- ---------- 8. interview_note 面经外链 ----------
 -- 只存外链与元数据，不存面经正文（M7 范围）
-CREATE TABLE interview_note (
+CREATE TABLE IF NOT EXISTS interview_note (
   id              BIGINT       NOT NULL AUTO_INCREMENT,
   student_id      BIGINT       NULL     COMMENT '收录人，外部抓取时可为空',
   source_url      VARCHAR(512) NOT NULL COMMENT '面经来源链接',
@@ -162,21 +185,22 @@ CREATE TABLE interview_note (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='面经外链';
 
 -- ---------- 9. v_dashboard 只读看板视图（M8 不建业务表） ----------
+-- 全部用 COUNT(DISTINCT ...) 聚合，避免多表 LEFT JOIN 扇出放大
 CREATE OR REPLACE VIEW v_dashboard AS
 SELECT
-  s.id                                                     AS student_id,
+  s.id                                                                AS student_id,
   s.student_no,
   s.name,
-  r.confirm_status                                         AS resume_status,
-  r.parsed_at                                              AS resume_parsed_at,
-  h.top_dimension                                          AS holland_top,
-  h.skill_missing                                          AS holland_skill_missing,
-  h.generated_at                                           AS profile_generated_at,
-  COUNT(DISTINCT a.id)                                     AS application_count,
-  SUM(CASE WHEN a.status = 'APPLIED' THEN 1 ELSE 0 END)    AS application_applied_count,
-  COUNT(DISTINCT i.id)                                     AS interview_count,
-  SUM(CASE WHEN i.status = 'SCHEDULED' THEN 1 ELSE 0 END)  AS interview_upcoming_count,
-  COUNT(DISTINCT n.id)                                     AS note_count
+  r.confirm_status                                                    AS resume_status,
+  r.parsed_at                                                         AS resume_parsed_at,
+  h.top_dimension                                                     AS holland_top,
+  h.skill_missing                                                     AS holland_skill_missing,
+  h.generated_at                                                      AS profile_generated_at,
+  COUNT(DISTINCT a.id)                                                AS application_count,
+  COUNT(DISTINCT CASE WHEN a.status = 'APPLIED' THEN a.id END)        AS application_applied_count,
+  COUNT(DISTINCT i.id)                                                AS interview_count,
+  COUNT(DISTINCT CASE WHEN i.status = 'SCHEDULED' THEN i.id END)      AS interview_upcoming_count,
+  COUNT(DISTINCT n.id)                                                AS note_count
 FROM student s
 LEFT JOIN resume          r ON r.student_id = s.id
 LEFT JOIN holland_profile h ON h.student_id = s.id
