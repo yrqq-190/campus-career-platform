@@ -6,6 +6,9 @@ import com.campus.career.holland.dto.QuestionView;
 import com.campus.career.holland.dto.QuestionsResponse;
 import com.campus.career.holland.dto.SaveAnswerResponse;
 import com.campus.career.holland.dto.SubmitResponse;
+import com.campus.career.holland.profile.ProfileService;
+import com.campus.career.holland.profile.ScoreNotTraceableException;
+import com.campus.career.holland.profile.dto.ProfileView;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -18,15 +21,18 @@ import org.springframework.stereotype.Service;
  * 接口契约见 architecture 4.2.1 ～ 4.2.3。计分属服务层（architecture 第 2 章已明确），
  * API 层只做参数与路由。
  *
- * <p>画像合成不在这里，属 T5 的 AC-2 / AC-3 / AC-5，需要读 M1 已确认档案。
+ * <p>提交成功后接着调 {@link ProfileService} 合成画像，一次请求交齐 scores 与 profile，
+ * 与 4.2.3 的响应结构一致。画像规则本身不在这个类里。
  */
 @Service
 public class QuizService {
 
     private final QuizRepository repository;
+    private final ProfileService profileService;
 
-    public QuizService(QuizRepository repository) {
+    public QuizService(QuizRepository repository, ProfileService profileService) {
         this.repository = repository;
+        this.profileService = profileService;
     }
 
     /** 取 30 题与已保存作答，支撑中途退出后的断点续答（AC-4、4.2.1）。 */
@@ -55,7 +61,7 @@ public class QuizService {
     }
 
     /**
-     * 提交问卷并计分（AC-1、AC-6、AC-7）。
+     * 提交问卷、计分并生成画像（AC-1、AC-6、AC-7，以及 4.2.3 的 profile）。
      *
      * <p>判定顺序与理由：
      * <ol>
@@ -63,7 +69,9 @@ public class QuizService {
      *       后面用户补完题再提交就会收到 409，而实际上一份画像都没生成；
      *   <li>完整性用「1–30 里缺哪些」算，不比对 answeredCount，因为作答 Map 可能因并发写入
      *       出现题号错位，逐个查才准；
-     *   <li>计分是纯计算不会失败，放在抢标记之前，避免标记成功后分数没写进去；
+     *   <li><b>追溯校验放在抢标记之前</b>。若先标了已提交再发现分数不可追溯，
+     *       学生会卡在「已提交但永远没有画像」的状态，重新提交又只会拿到 409；
+     *   <li>计分是纯计算不会失败，同样放在抢标记之前；
      *   <li>标记用原子的 markSubmittedIfAbsent，两人同时点提交时只有一个能拿到 true（AC-7）。
      * </ol>
      */
@@ -82,6 +90,10 @@ public class QuizService {
         }
 
         HollandScorer.Result result = HollandScorer.score(answers);
+        if (!result.allTraceable()) {
+            // AC-8：数据异常就不让它占掉已提交状态，学生重新提交还能救
+            throw new ScoreNotTraceableException("六维得分无法完整回溯到原始作答，本次提交不生效");
+        }
 
         if (!repository.markSubmittedIfAbsent(studentId)) {
             throw new BusinessException(ErrorCode.QUIZ_DUPLICATE_SUBMIT,
@@ -89,11 +101,11 @@ public class QuizService {
         }
         repository.saveScores(studentId, result.scores());
 
-        // profile 为 null：画像合成属 T5，这里不编造内容
-        return new SubmitResponse(result.scores(), null);
+        ProfileView profile = profileService.generateFrom(studentId, result);
+        return new SubmitResponse(result.scores(), profile);
     }
 
-    /** 供 T5 与测试使用，拿到可追溯的计分明细，不对外暴露。 */
+    /** 供测试与后续任务使用，拿到可追溯的计分明细，不对外暴露。 */
     public HollandScorer.Result scoringDetail(String studentId) {
         return HollandScorer.score(repository.findAnswers(studentId));
     }
