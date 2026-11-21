@@ -1,0 +1,188 @@
+-- =============================================================
+-- T1 / Issue #107  MVP1 数据库结构 v1.0
+-- 依据：docs/architecture.md 第 3 章「核心数据实体」8 张表
+--       + spec/module-01/02/04/05/06/07 的字段与约束要求
+-- 数据库：MySQL 8.0 / InnoDB / utf8mb4
+--
+-- 本版已定的 4 处判断（原草案末尾的「待拍板」）：
+-- 1. student 增加 role 列，默认 STUDENT；spec 无登录要求，故不建密码列。
+-- 2. 不建 recommendation 表：architecture 第 3 章无该实体，推荐结果实时计算，
+--    推荐理由由 M3 接口按需返回，不落库。
+-- 3. application.status 用 VARCHAR(24)，合法取值待 T8 主笔确认后写入注释，
+--    本版不写死枚举，避免与 spec 冲突。
+-- 4. reminder.node_type 按「4 节点 + 复盘」定为
+--    T_MINUS_24H / T_MINUS_3H / T_MINUS_1H / START / REVIEW，
+--    待 T10 主笔对照 module-06 节点枚举映射表核对后冻结。
+-- =============================================================
+
+SET NAMES utf8mb4;
+
+-- ---------- 1. student 学生账号 ----------
+CREATE TABLE student (
+  id            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
+  student_no    VARCHAR(32)  NOT NULL                COMMENT '学号，唯一',
+  name          VARCHAR(64)  NOT NULL                COMMENT '姓名',
+  college       VARCHAR(64)  NULL                    COMMENT '院系',
+  major         VARCHAR(64)  NULL                    COMMENT '专业',
+  grad_year     SMALLINT     NULL                    COMMENT '毕业年份',
+  role          VARCHAR(16)  NOT NULL DEFAULT 'STUDENT' COMMENT '角色：STUDENT（spec 未涉及登录，不建密码列）',
+  created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_student_no (student_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学生账号';
+
+-- ---------- 2. resume 简历与解析结果 ----------
+-- 每个学生一份有效简历；解析结果停在待确认态，确认后才对下游生效（M1 AC-2）
+CREATE TABLE resume (
+  id             BIGINT       NOT NULL AUTO_INCREMENT,
+  student_id     BIGINT       NOT NULL COMMENT '所属学生',
+  file_name      VARCHAR(255) NOT NULL COMMENT '原始文件名',
+  file_path      VARCHAR(512) NOT NULL COMMENT '存储路径',
+  file_size      INT          NOT NULL COMMENT '字节数，超限由应用层拦 413 RESUME_TOO_LARGE',
+  parsed_basic   JSON         NULL     COMMENT '基本信息（姓名/联系方式等）',
+  parsed_edu     JSON         NULL     COMMENT '教育经历',
+  parsed_exp     JSON         NULL     COMMENT '实习/工作经历',
+  parsed_skill   JSON         NULL     COMMENT '技能列表，可为空数组',
+  skill_empty    TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '1=技能字段为空，供 M2 AC-5 降级判定',
+  confirm_status VARCHAR(16)  NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING 待确认 / CONFIRMED 已确认',
+  parsed_at      DATETIME     NULL     COMMENT '解析完成时间',
+  created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_resume_student (student_id),
+  CONSTRAINT fk_resume_student FOREIGN KEY (student_id) REFERENCES student (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='简历与解析结果';
+
+-- ---------- 3. holland_profile 霍兰德六维画像 ----------
+-- 与 student 一对一；重新生成时整体替换（M2 AC-3），不保留历史行
+CREATE TABLE holland_profile (
+  id            BIGINT      NOT NULL AUTO_INCREMENT,
+  student_id    BIGINT      NOT NULL,
+  score_r       TINYINT     NOT NULL DEFAULT 0 COMMENT '现实型',
+  score_i       TINYINT     NOT NULL DEFAULT 0 COMMENT '研究型',
+  score_a       TINYINT     NOT NULL DEFAULT 0 COMMENT '艺术型',
+  score_s       TINYINT     NOT NULL DEFAULT 0 COMMENT '社会型',
+  score_e       TINYINT     NOT NULL DEFAULT 0 COMMENT '企业型',
+  score_c       TINYINT     NOT NULL DEFAULT 0 COMMENT '常规型',
+  top_dimension CHAR(1)     NOT NULL COMMENT 'R/I/A/S/E/C 中最高维',
+  skill_missing TINYINT(1)  NOT NULL DEFAULT 0 COMMENT '1=简历技能为空，画像降级（M2 AC-5）',
+  revision      INT         NOT NULL DEFAULT 1 COMMENT '第几次生成，重新生成时 +1 并整体替换',
+  generated_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_holland_student (student_id),
+  CONSTRAINT fk_holland_student FOREIGN KEY (student_id) REFERENCES student (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='霍兰德六维画像';
+
+-- ---------- 4. job 岗位外链元数据 ----------
+CREATE TABLE job (
+  id              BIGINT       NOT NULL AUTO_INCREMENT,
+  title           VARCHAR(128) NOT NULL COMMENT '岗位名称',
+  company         VARCHAR(128) NULL,
+  location        VARCHAR(64)  NULL,
+  salary_range    VARCHAR(64)  NULL,
+  jd_text         TEXT         NULL     COMMENT '岗位描述，M4 状态流转时要求非空',
+  external_url    VARCHAR(512) NOT NULL COMMENT '第三方岗位链接',
+  source          VARCHAR(32)  NULL     COMMENT '来源站点标识',
+  link_status     VARCHAR(16)  NOT NULL DEFAULT 'UNKNOWN' COMMENT 'VALID/INVALID/UNKNOWN，外链失效标记',
+  last_checked_at DATETIME     NULL     COMMENT '最近一次可达性探测时间（M7 3 秒判定）',
+  created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_job_link_status (link_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='岗位外链元数据';
+
+-- ---------- 5. application 投递记录 ----------
+-- 唯一约束防重复投递（M4 AC-2/AC-3；ADR-001：唯一约束 + 乐观锁）
+CREATE TABLE application (
+  id          BIGINT      NOT NULL AUTO_INCREMENT,
+  student_id  BIGINT      NOT NULL,
+  job_id      BIGINT      NOT NULL,
+  status      VARCHAR(24) NOT NULL DEFAULT 'APPLIED' COMMENT '投递状态；非法流转返 409 INVALID_STATUS_TRANSITION，取值集合待 T8 确认',
+  applied_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  version     INT         NOT NULL DEFAULT 0 COMMENT '乐观锁版本号（ADR-001）',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_app_student_job (student_id, job_id),
+  KEY idx_app_job (job_id),
+  CONSTRAINT fk_app_student FOREIGN KEY (student_id) REFERENCES student (id),
+  CONSTRAINT fk_app_job FOREIGN KEY (job_id) REFERENCES job (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='投递记录';
+
+-- ---------- 6. interview 面试登记 ----------
+CREATE TABLE interview (
+  id             BIGINT       NOT NULL AUTO_INCREMENT,
+  student_id     BIGINT       NOT NULL,
+  company        VARCHAR(128) NOT NULL,
+  position       VARCHAR(128) NULL,
+  start_time     DATETIME     NOT NULL COMMENT '面试开始时间',
+  departure_time DATETIME     NULL     COMMENT '出发时间；为空时按开始时间前推计算（M6 NFR-1）',
+  status         VARCHAR(16)  NOT NULL DEFAULT 'SCHEDULED' COMMENT 'SCHEDULED/CANCELED/DONE',
+  created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_interview_student (student_id),
+  KEY idx_interview_start (start_time),
+  CONSTRAINT fk_interview_student FOREIGN KEY (student_id) REFERENCES student (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='面试登记';
+
+-- ---------- 7. reminder 提醒任务 ----------
+-- 5 次触发 = 4 个节点 + 复盘；唯一约束防重复触发（M6）
+CREATE TABLE reminder (
+  id           BIGINT       NOT NULL AUTO_INCREMENT,
+  interview_id BIGINT       NOT NULL,
+  node_type    VARCHAR(24)  NOT NULL COMMENT 'T_MINUS_24H/T_MINUS_3H/T_MINUS_1H/START/REVIEW，待 T10 对照 module-06 冻结',
+  remind_at    DATETIME     NOT NULL COMMENT '计划触发时间',
+  sent_at      DATETIME     NULL     COMMENT '实际发送时间',
+  status       VARCHAR(16)  NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/SENT/FAILED',
+  retry_count  TINYINT      NOT NULL DEFAULT 0 COMMENT '已重试次数，上限 3，间隔 5 分钟',
+  fail_reason  VARCHAR(255) NULL     COMMENT '失败原因，如 REMINDER_SEND_FAILED',
+  created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_reminder_interview_node (interview_id, node_type),
+  CONSTRAINT fk_reminder_interview FOREIGN KEY (interview_id) REFERENCES interview (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='提醒任务';
+
+-- ---------- 8. interview_note 面经外链 ----------
+-- 只存外链与元数据，不存面经正文（M7 范围）
+CREATE TABLE interview_note (
+  id              BIGINT       NOT NULL AUTO_INCREMENT,
+  student_id      BIGINT       NULL     COMMENT '收录人，外部抓取时可为空',
+  source_url      VARCHAR(512) NOT NULL COMMENT '面经来源链接',
+  title           VARCHAR(255) NULL,
+  company         VARCHAR(128) NULL,
+  position        VARCHAR(128) NULL,
+  tags            VARCHAR(255) NULL    COMMENT '标签，逗号分隔，用于筛选',
+  status          VARCHAR(16)  NOT NULL DEFAULT 'UNVERIFIED' COMMENT 'VALID/INVALID/UNVERIFIED',
+  last_checked_at DATETIME     NULL    COMMENT '最近一次失效探测时间',
+  created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_note_status (status),
+  KEY idx_note_company (company)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='面经外链';
+
+-- ---------- 9. v_dashboard 只读看板视图（M8 不建业务表） ----------
+CREATE OR REPLACE VIEW v_dashboard AS
+SELECT
+  s.id                                                     AS student_id,
+  s.student_no,
+  s.name,
+  r.confirm_status                                         AS resume_status,
+  r.parsed_at                                              AS resume_parsed_at,
+  h.top_dimension                                          AS holland_top,
+  h.skill_missing                                          AS holland_skill_missing,
+  h.generated_at                                           AS profile_generated_at,
+  COUNT(DISTINCT a.id)                                     AS application_count,
+  SUM(CASE WHEN a.status = 'APPLIED' THEN 1 ELSE 0 END)    AS application_applied_count,
+  COUNT(DISTINCT i.id)                                     AS interview_count,
+  SUM(CASE WHEN i.status = 'SCHEDULED' THEN 1 ELSE 0 END)  AS interview_upcoming_count,
+  COUNT(DISTINCT n.id)                                     AS note_count
+FROM student s
+LEFT JOIN resume          r ON r.student_id = s.id
+LEFT JOIN holland_profile h ON h.student_id = s.id
+LEFT JOIN application     a ON a.student_id = s.id
+LEFT JOIN interview       i ON i.student_id = s.id
+LEFT JOIN interview_note  n ON n.student_id = s.id
+GROUP BY s.id, s.student_no, s.name,
+         r.confirm_status, r.parsed_at,
+         h.top_dimension, h.skill_missing, h.generated_at;
