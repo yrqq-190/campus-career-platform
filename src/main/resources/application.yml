@@ -18,3 +18,13 @@ spring:
 logging:
   level:
     com.campus.career: INFO
+
+career:
+  parse:
+    # spec FR-4 写死的三组数字，不是可调优参数：超时 30 秒、最多重试 2 次、间隔 1 秒。
+    # 最坏耗时 30 × 3 + 1 × 2 = 92 秒，与 NFR-1 一致。
+    # 做成配置的唯一目的是让重试逻辑能在毫秒级验完 —— 真跑 92 秒的用例进不了 CI。
+    # 要改这三项，先改 spec 的 FR-4，不允许只改这里的值。
+    timeout: 30s
+    retries: 2
+    interval: 1s
