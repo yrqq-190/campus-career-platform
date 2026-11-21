@@ -2,7 +2,7 @@
 
 > 归属：颜睿卿（第 9 周分支规划责任人，见四天分工表第四节 / 课件 P5 第 5 项）
 > 依据：`plans/mvp1-plan.md` 的 12 个任务、`docs/architecture.md` 冻结范围（§8）
-> 版本：v1.1（2026-11-20，与 `plans/mvp1-plan.md` v1.3 同步，回填 T1–T5 的 Issue 编号 #103–#107）
+> 版本：v1.1（2026-11-21，与 `plans/mvp1-plan.md` v1.5 同步，T1–T12 的 Issue 编号全部回填）
 > 范围：仅 T1–T12，不含语音面试、企业端、自建岗位库、社区（MVP2）
 
 ## 一、命名规则
@@ -35,15 +35,17 @@
 | T3 | `feature/issue-104-m1-parse-fallback` | `main` | `main` | 贾小舒 | 否（等 T2 合并） |
 | T4 | `feature/issue-105-m2-quiz` | `main` | `main` | 贾小舒 | 否（等 T2） |
 | T5 | `feature/issue-106-m2-profile` | `main` | `main` | 贾小舒 | 否（等 T4） |
-| T6 | `feature/issue-<T6>-m3-recommend-list` | `main` | `main` | 赵蔚 | **契约骨架 + Mock** |
-| T7 | `feature/issue-<T7>-m3-link-fallback` | `main` | `main` | 赵蔚 | 否（等 T6） |
-| T8 | `feature/issue-<T8>-m4-application` | `main` | `main` | 赵蔚 | 否（等 T6） |
-| T9 | `feature/issue-<T9>-m5-mock-session` | `main` | `main` | 卢果 | **契约骨架 + Mock** |
-| T10 | `feature/issue-<T10>-m6-reminder` | `main` | `main` | 卢果 | 否（等 T8） |
-| T11 | `feature/issue-<T11>-m7-notes` | `main` | `main` | 熊尚华 | **契约骨架 + Mock** |
-| T12 | `feature/issue-<T12>-m8-dashboard` | `main` | `main` | 熊尚华 | 否（等 T1–T11） |
+| T6 | `feature/issue-110-m3-recommend-list` | `main` | `main` | 赵蔚 | **契约骨架 + Mock**（docs 形态） |
+| T7 | `feature/issue-111-m3-link-fallback` | `main` | `main` | 赵蔚 | 否（等 T6） |
+| T8 | `feature/issue-112-m4-application` | `main` | `main` | 赵蔚 | 否（等 T6） |
+| T9 | `feature/issue-114-m5-mock-session` | `main` | `main` | 卢果 | **契约骨架 + Mock**（docs 形态） |
+| T10 | `feature/issue-115-m6-reminder` | `main` | `main` | 卢果 | 否（等 T8） |
+| T11 | `feature/issue-108-m7-notes` | `main` | `main` | 熊尚华 | **契约骨架 + Mock**（docs 形态） |
+| T12 | `feature/issue-109-m8-dashboard` | `main` | `main` | 熊尚华 | 否（等 T1–T11） |
 
-**「契约骨架 + Mock」的边界**：按 `architecture.md` 第 4 章已冻结的 URL / 请求 / 成功响应 / 失败响应 / 错误码，实现 Controller、DTO 与前端页面骨架，返回**写死的 Mock 数据**。不连数据库、不写业务规则、不做持久化。前置任务完成后在**同一分支**替换为真实实现，不重开分支。
+**「契约骨架 + Mock」的边界（11-21 确认版）**：骨架任务（T6 / T9 / T11）统一走 **docs 形态**——契约说明 + DTO/VO 结构 + Mock JSON + 页面结构，统一放 `docs/skeletons/`，命名 `T6-m3-recommend.md`、`T9-m5-mock-session.md`、`T11-m7-notes.md`。**不落 `src/`、不落 `frontend/`**：`#11` 脚手架尚未合并，仓库还没有 `pom.xml` 和 `package.json`，此时写进去的 Java / Vue 既不能编译也不能跑，评审只能当文本看，等于僵尸资产；三个模块也必须同形态，不能有的交代码、有的交文档。
+
+**例外是 T1**：DDL 本身可执行，属基建而非骨架，落 `db/schema.sql`，评审通过即可合并。第 10 周 `#11` 合并后，各人在**自己分支**把 docs 骨架转成可编译代码，PR 描述写清「骨架 → 实现」的对应关系，不重开分支、不换 Issue。
 
 ## 三、切出规则
 
@@ -102,3 +104,4 @@ git branch -r | grep -oE 'origin/[a-z]+/issue-[0-9]+-[a-z0-9-]+$'
 |---|---|---|
 | 2026-11-19 | 初版：命名规则 5 前缀 + 12 条分支 + 切出/合并规则 + 合规自检 | 颜睿卿 |
 | 2026-11-20 | v1.1：T1 回填 #107、T2–T5 回填 #103–#106（与 `plans/mvp1-plan.md` v1.3 逐条一致）；T6–T12 仍为 `<Tn>` 占位，待对应 Issue 建出后回填 | 颜睿卿 |
+| 2026-11-21 | v1.1（续）：T6–T12 回填 #110–#112、#114、#115、#108、#109，至此 12 条全部带编号（对齐 plan v1.5）；「契约骨架 + Mock」边界改为 docs 形态（`docs/skeletons/`，T1 例外落 `db/schema.sql`） | 颜睿卿 |
