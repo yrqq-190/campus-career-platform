@@ -1,0 +1,20 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: campus-career-platform
+
+  servlet:
+    multipart:
+      # 与 spec/mvp1-scope.md 的 MAX_RESUME_SIZE 一致：恰好 10MB 放行。
+      # 超过时 Spring 在进入 Controller 前抛 MaxUploadSizeExceededException，
+      # 由 GlobalExceptionHandler 转成 413 RESUME_TOO_LARGE。
+      max-file-size: 10MB
+      # 请求总大小要给 multipart 边界留余量，若与 max-file-size 都写 10MB，
+      # 一份恰好 10MB 的文件再加上边界开销会被误判超限。
+      max-request-size: 12MB
+
+logging:
+  level:
+    com.campus.career: INFO
