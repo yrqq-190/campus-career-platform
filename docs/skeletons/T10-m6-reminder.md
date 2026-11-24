@@ -12,11 +12,26 @@ POST /api/v1/interviews
     "interviewId": "itv_20261121_001",
     "status": "SCHEDULED",
     "reminders": [
-      { "nodeType": "D3", "triggerAt": "2026-11-18T14:00:00+08:00" },
-      { "nodeType": "D1", "triggerAt": "2026-11-20T14:00:00+08:00" },
-      { "nodeType": "H2_DEPARTURE", "triggerAt": "2026-11-21T10:30:00+08:00" },
-      { "nodeType": "M30", "triggerAt": "2026-11-21T13:30:00+08:00" },
-      { "nodeType": "POST_REVIEW", "triggerAt": "2026-11-21T16:00:00+08:00" }
+      {
+        "nodeType": "D3",
+        "triggerAt": "2026-11-18T14:00:00+08:00"
+      },
+      {
+        "nodeType": "D1",
+        "triggerAt": "2026-11-20T14:00:00+08:00"
+      },
+      {
+        "nodeType": "H2_DEPARTURE",
+        "triggerAt": "2026-11-21T10:30:00+08:00"
+      },
+      {
+        "nodeType": "M30",
+        "triggerAt": "2026-11-21T13:30:00+08:00"
+      },
+      {
+        "nodeType": "POST_REVIEW",
+        "triggerAt": "2026-11-21T16:00:00+08:00"
+      }
     ],
     "baselineFallback": false
   }
@@ -42,7 +57,6 @@ POST /api/v1/interviews
 2. **详情页**：垂直时间轴视图展示 5 个提醒触发时间、[导出到日历(.ics)]按钮、[修改时间]和[取消面试]按钮。
 
 ## 六、Java 骨架代码 (Controller)
-
 ```java
 package com.campus.career.controller;
 
@@ -52,7 +66,7 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/v1/interviews")
 public class M6InterviewReminderController {
-
+    
     @PostMapping
     public Map<String, Object> createInterview(@RequestBody Map<String, Object> request) {
         Map<String, Object> response = new HashMap<>();
