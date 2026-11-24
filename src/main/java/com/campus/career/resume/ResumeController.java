@@ -113,27 +113,24 @@ public class ResumeController {
      * <p><b>空态处理</b>：未建档时 {@code data} 为 {@code null}，是 200 而不是 404 ——
      * 「还没上传过简历」是一个正常状态，不是错误，所以不套用任何错误码。
      *
-     * <p><b>与契约字面的一处偏差</b>：4.1.3 写的是 {@code "data": null}。
-     * {@link ApiResponse} 用类级 {@code @JsonInclude(NON_NULL)} 让空字段整体不出现，
-     * 空态因此表现为<b>省去 {@code data} 键</b>。前端侧 {@code data == null} 与
-     * {@code data === undefined} 等价，行为一致；要严格字面输出 {@code "data": null}，
-     * 需给 {@code ApiResponse.data} 加字段级 {@code ALWAYS}，那样失败响应就会多出
-     * {@code "data": null}，与 4.1.1 的「失败不带 data」相反。两害相权，保持现状，
-     * 偏差在 PR 描述里列出，等 Spec Owner 裁定后统一改。
+     * <p><b>为什么这里不用 {@link ApiResponse}</b>：4.1.3 要求空态输出字面的 {@code "data": null}，
+     * 而 {@link ApiResponse} 的类级 {@code @JsonInclude(NON_NULL)} 会把为 null 的 {@code data} 整个省掉。
+     * 这与 4.2.4 的画像是同一情形，处理方式也照 {@code ProfileResponse} 的先例：
+     * 另造一个不带 NON_NULL 的壳，详见 {@link CurrentResumeResponse} 的类注释。
      */
     @GetMapping("/current")
-    public ResponseEntity<ApiResponse<CurrentResumeResponse>> current(
+    public ResponseEntity<CurrentResumeResponse> current(
             @RequestHeader(value = StudentIdentity.HEADER, required = false) String studentHeader,
             HttpServletRequest request) {
 
         String studentId = StudentIdentity.resolve(studentHeader);
         String requestId = requestId(request);
 
-        CurrentResumeResponse body = archiveService.current(studentId)
-                .map(CurrentResumeResponse::of)
+        ResumeView view = archiveService.current(studentId)
+                .map(ResumeView::of)
                 .orElse(null);
 
-        return ResponseEntity.ok(ApiResponse.ok(requestId, body));
+        return ResponseEntity.ok(CurrentResumeResponse.ok(requestId, view));
     }
 
     /** 校验已通过，此时读不出内容只可能是传输层出了问题，按不可读处理。 */

@@ -1,5 +1,6 @@
 package com.campus.career.resume;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -184,15 +185,16 @@ class ResumeArchiveControllerTest {
     }
 
     @Test
-    @DisplayName("AC-2 空态：未建档返回 200，data 为空，不返回 404")
+    @DisplayName("AC-2 空态：未建档返回 200 与字面的 data: null，不返回 404")
     void currentEmpty() throws Exception {
         mockMvc.perform(get("/api/v1/resumes/current")
                         .header(StudentIdentity.HEADER, STUDENT_A))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.requestId").isNotEmpty())
-                // ApiResponse 的 NON_NULL 让 data 整个键不出现，与「data: null」在 JS 侧等价
-                .andExpect(jsonPath("$.data").doesNotExist());
+                // 4.1.3 要求字段在、值为 null。响应用 CurrentResumeResponse 而不是 ApiResponse，
+                // 就是因为后者的 NON_NULL 会让这个键整个消失（同 ProfileResponse 对 4.2.4 的处理）
+                .andExpect(jsonPath("$.data").value(nullValue()));
     }
 
     @Test
@@ -227,7 +229,7 @@ class ResumeArchiveControllerTest {
 
         mockMvc.perform(get("/api/v1/resumes/current").header(StudentIdentity.HEADER, STUDENT_B))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data").doesNotExist());
+                .andExpect(jsonPath("$.data").value(nullValue()));
 
         mockMvc.perform(post("/api/v1/resumes/confirm")
                         .header(StudentIdentity.HEADER, STUDENT_B)
