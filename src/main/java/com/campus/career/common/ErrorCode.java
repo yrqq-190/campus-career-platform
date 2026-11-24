@@ -29,7 +29,17 @@ public enum ErrorCode {
     MODEL_OUTPUT_INVALID(HttpStatus.BAD_GATEWAY, "解析结果格式异常，请稍后重试"),
 
     /** 解析流程完成但四类字段全空。AC-8、边界行 8 */
-    NO_VALID_FIELD(HttpStatus.UNPROCESSABLE_ENTITY, "未能从简历中识别出有效内容，请更换文件重试");
+    NO_VALID_FIELD(HttpStatus.UNPROCESSABLE_ENTITY, "未能从简历中识别出有效内容，请更换文件重试"),
+
+    // ---- M2 霍兰德问卷 ----
+    /**
+     * 30 题未全部作答就提交，或问卷未提交就请求生成画像。
+     * AC-6、边界行 1 与 8。响应体需带未答题号，由 QuizIncompleteResponse 承载。
+     */
+    QUIZ_INCOMPLETE(HttpStatus.UNPROCESSABLE_ENTITY, "问卷未答完，请完成后提交"),
+
+    /** 已成功提交后再次提交，或提交后再次修改作答。AC-7、边界行 2 */
+    QUIZ_DUPLICATE_SUBMIT(HttpStatus.CONFLICT, "问卷已提交，请勿重复提交");
 
     private final HttpStatus httpStatus;
     private final String defaultMessage;
