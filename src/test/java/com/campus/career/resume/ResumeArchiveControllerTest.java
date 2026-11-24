@@ -2,16 +2,23 @@ package com.campus.career.resume;
 
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.campus.career.common.StudentIdentity;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,6 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -28,6 +36,10 @@ import org.springframework.test.web.servlet.MockMvc;
  * 与 AC-9 的后半段（确认链路失败时旧档案不变）。这两条在上传端点里验不到，
  * 因为上传成功只写暂存区，正式档案在那条链路上一直是空的。
  *
+ * <p>其中 {@code uploadThenConfirmThenCurrent} 走的是三端点串联的真实链路：
+ * 直接构造 confirm 请求体的用例能验证端点本身，但证明不了「上传返回的字段能原样走完确认」，
+ * 而 AC-2 说的正是这条链路。
+ *
  * <p>每个用例自己清一次仓库，不依赖执行顺序：内存仓库是单例，上传测试写进去的暂存会跨类残留。
  */
 @SpringBootTest
@@ -36,6 +48,7 @@ class ResumeArchiveControllerTest {
 
     private static final String STUDENT_A = "student-a";
     private static final String STUDENT_B = "student-b";
+    private static final String STUDENT_C = "student-c";
 
     /** 两条技能、一条教育、一条项目，与 4.1.2 示例同构。 */
     private static final String BODY_TWO_SKILLS = """
@@ -74,6 +87,9 @@ class ResumeArchiveControllerTest {
     private MockMvc mockMvc;
 
     @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
     private InMemoryConfirmedResumeRepository confirmed;
 
     @Autowired
@@ -83,8 +99,10 @@ class ResumeArchiveControllerTest {
     void clean() {
         confirmed.remove(STUDENT_A);
         confirmed.remove(STUDENT_B);
+        confirmed.remove(STUDENT_C);
         staging.remove(STUDENT_A);
         staging.remove(STUDENT_B);
+        staging.remove(STUDENT_C);
     }
 
     @Test
@@ -240,5 +258,61 @@ class ResumeArchiveControllerTest {
         assertEquals(2, confirmed.find(STUDENT_A).orElseThrow().content().skills().size(),
                 "B 的确认不得覆盖 A 的档案");
         assertNotNull(confirmed.find(STUDENT_B).orElse(null));
+    }
+
+    @Test
+    @DisplayName("AC-2 全链路：上传只写暂存区，确认后 current 才读得到，字段与上传返回一致")
+    void uploadThenConfirmThenCurrent() throws Exception {
+        // 1. 上传：解析结果只进暂存区，正式档案仍为空（AC-1 的「正式档案不变」）
+        String uploadResponse = mockMvc.perform(multipart("/api/v1/resumes")
+                        .file(pdf())
+                        .header(StudentIdentity.HEADER, STUDENT_C))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("PENDING_CONFIRM"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+        assertTrue(confirmed.find(STUDENT_C).isEmpty(), "上传成功不得写正式档案");
+        assertTrue(staging.find(STUDENT_C).isPresent(), "上传成功应写暂存区");
+
+        // 2. 确认：把上传返回的四类字段原样提交，这是真实前端的动作
+        JsonNode data = objectMapper.readTree(uploadResponse).path("data");
+        String confirmBody = objectMapper.writeValueAsString(confirmPayloadFrom(data));
+
+        mockMvc.perform(post("/api/v1/resumes/confirm")
+                        .header(StudentIdentity.HEADER, STUDENT_C)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(confirmBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CONFIRMED"));
+
+        assertFalse(confirmed.find(STUDENT_C).isEmpty(), "确认后正式档案必须有内容");
+
+        // 3. 读取：current 返回的就是刚确认的那份，字段没有在端点之间走样
+        mockMvc.perform(get("/api/v1/resumes/current").header(StudentIdentity.HEADER, STUDENT_C))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.data.education[0].school").isNotEmpty())
+                .andExpect(jsonPath("$.data.skills[0]").isNotEmpty());
+    }
+
+    /** 用上传响应里的 data 拼确认请求体，模拟确认页把解析结果原样提交。 */
+    private Map<String, Object> confirmPayloadFrom(JsonNode data) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("resumeId", data.path("resumeId").asText());
+        payload.put("education", data.path("parse").path("education"));
+        payload.put("skills", data.path("parse").path("skills"));
+        payload.put("projects", data.path("parse").path("projects"));
+        payload.put("internships", data.path("parse").path("internships"));
+        return payload;
+    }
+
+    /** 4 字节 PDF 文件头加填充，与 {@code ResumeControllerTest} 的构造一致。 */
+    private MockMultipartFile pdf() {
+        byte[] bytes = new byte[2048];
+        bytes[0] = 0x25;
+        bytes[1] = 0x50;
+        bytes[2] = 0x44;
+        bytes[3] = 0x46;
+        return new MockMultipartFile("file", "resume.pdf", "application/pdf", bytes);
     }
 }
