@@ -1,6 +1,7 @@
 package com.campus.career.resume;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * {@code POST /api/v1/resumes} 的成功响应体，结构照抄 docs/architecture.md 4.1.1 的示例。
@@ -15,12 +16,13 @@ public record UploadResumeResponse(String resumeId, String status, ParseStage pa
     /**
      * 解析结果的四类字段。
      *
-     * <p>本周只固定结构与「空数组不省略」的语义；元素内部的字段结构随解析链路一起定义，
-     * 在接入大模型的那个 PR 里与 spec FR-5 对齐后再补类型，避免现在凭空造字段。
+     * <p>元素内部保留模型输出经过 Schema 校验后的键值，不再削成固定 POJO：
+     * spec FR-5 只要求「每类按统一字段结构返回」，没有把每类的字段清单定死，
+     * 提前固化等于自造契约。强制必填的键见 {@link ResumeParseSchema}。
      */
-    public record ParseStage(List<Object> education,
-                             List<String> skills,
-                             List<Object> projects,
-                             List<Object> internships) {
+    public record ParseStage(List<Map<String, Object>> education,
+                            List<String> skills,
+                            List<Map<String, Object>> projects,
+                            List<Map<String, Object>> internships) {
     }
 }

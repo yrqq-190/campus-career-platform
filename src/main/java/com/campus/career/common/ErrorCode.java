@@ -39,7 +39,13 @@ public enum ErrorCode {
     QUIZ_INCOMPLETE(HttpStatus.UNPROCESSABLE_ENTITY, "问卷未答完，请完成后提交"),
 
     /** 已成功提交后再次提交，或提交后再次修改作答。AC-7、边界行 2 */
-    QUIZ_DUPLICATE_SUBMIT(HttpStatus.CONFLICT, "问卷已提交，请勿重复提交");
+    QUIZ_DUPLICATE_SUBMIT(HttpStatus.CONFLICT, "问卷已提交，请勿重复提交"),
+
+    /**
+     * 某维度得分无法回溯到任何作答，属计分数据异常。AC-8、边界行 6。
+     * 用 500 而不是 4xx：这不是学生操作错了，是服务端数据出了问题。
+     */
+    SCORE_NOT_TRACEABLE(HttpStatus.INTERNAL_SERVER_ERROR, "数据异常，请重新提交问卷");
 
     private final HttpStatus httpStatus;
     private final String defaultMessage;
