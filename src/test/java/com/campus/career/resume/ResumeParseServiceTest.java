@@ -93,7 +93,7 @@ class ResumeParseServiceTest {
     }
 
     @Test
-    @DisplayName("AC-7：模型返回自然语言，重试后仍不合法，返回 502")
+    @DisplayName("AC-7：模型返回自然语言，校验失败即终止，返回 502 且只调 1 次")
     void naturalLanguageBecomes502() {
         model.setMode(MockResumeParseModel.Mode.NATURAL_LANGUAGE);
 
@@ -101,11 +101,12 @@ class ResumeParseServiceTest {
                 () -> service.parse(STUDENT, DOCUMENT, "req-natural"));
 
         assertEquals(ErrorCode.MODEL_OUTPUT_INVALID, ex.errorCode());
-        assertEquals(3, model.calls(), "FR-4 的「失败最多重试 2 次」对输出不合法同样适用");
+        assertEquals(1, model.calls(), "边界表「校验失败即终止」：502 不重试，只调 1 次");
         assertTrue(staging.find(STUDENT).isEmpty());
 
         ParseTrace trace = onlyTrace();
-        assertEquals(3, trace.attempts());
+        assertEquals(1, trace.attempts());
+        assertFalse(trace.retried());
         assertEquals("MODEL_OUTPUT_INVALID", trace.errorCode());
     }
 

@@ -111,7 +111,7 @@ class ResumeParseFallbackControllerTest {
                 .andExpect(jsonPath("$.code").value("MODEL_OUTPUT_INVALID"))
                 .andExpect(jsonPath("$.data").doesNotExist());
 
-        assertEquals(3, model.calls(), "FR-4：输出不合法也按「失败最多重试 2 次」处理");
+        assertEquals(1, model.calls(), "边界表「校验失败即终止」：502 不重试，只调 1 次");
         assertTrue(staging.find(student).isEmpty());
     }
 

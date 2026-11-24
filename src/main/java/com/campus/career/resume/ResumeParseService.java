@@ -25,17 +25,18 @@ import org.springframework.stereotype.Service;
  * </ol>
  *
  * <h2>重试口径</h2>
- * <p>FR-4 写的是「失败最多重试 2 次、间隔 1 秒」，没有把重试限定在超时一种。所以：
+ * <p>只有<b>超时</b>会重试，其余失败一律终止。依据是 spec/module-01「边界与异常」表的写法：
+ * 超时那行写「重试 2 次后放弃」，502 那行写「校验失败即终止，不展示半成品」，
+ * 两行刻意对照，所以重试是超时独有的行为，不是所有失败的通用策略。
  * <ul>
- *   <li><b>超时</b>（504）与<b>输出不合法</b>（502）都进重试循环，最多共 3 次尝试，
- *       最终错误码取最后一次尝试的原因；
- *   <li><b>四类字段全空</b>（422）<b>不重试</b>：模型已经正常返回了，重试仍是空，
- *       多等两轮只会让学生白等十几秒。它属于 FR-5 的结果判定，不是 FR-4 的调用失败。
+ *   <li><b>超时</b>（504）进重试循环，最多共 3 次尝试，每次 30 秒、间隔 1 秒，
+ *       最坏 92 秒后放弃；</li>
+ *   <li><b>模型输出不合法</b>（502）<b>只调 1 次</b>：模型已经回过话了，再问一遍同类输出
+ *       仍是不可用的，多等两轮只会让学生白等十几秒。这一条同时符合
+ *       {@link ResumeParseModel} 接口注释里「只有超时才计入重试」的约定；</li>
+ *   <li><b>四类字段全空</b>（422）<b>只调 1 次</b>：模型已正常返回，重试仍是空。
+ *       它属于 FR-5 的结果判定，不是 FR-4 的调用失败。</li>
  * </ul>
- *
- * <p>混合同一循环里也可能出现「第一次超时、第二次输出不合法」，
- * 此时按最后一次的原因返回 502。理由：最后一次才是系统对当前这份输出的最终判断，
- * 返回最先一次的原因会让前端提示与真实结局不符。
  *
  * <h2>为什么失败时正式档案一定不受影响</h2>
  * <p>本类<b>不持有</b> {@code ConfirmedResumeRepository}，构造器里没有这个依赖。
@@ -44,7 +45,11 @@ import org.springframework.stereotype.Service;
  * <h2>调用本身失败怎么办</h2>
  * <p>网关 500、鉴权失败、连接超时这类异常没有独立错误码：M1 的六个码是 spec 与接口契约的
  * 封闭集合，自造 {@code LLM_ERROR} 属越界。按 502 {@code MODEL_OUTPUT_INVALID} 处理，
- * 502 的语义本就是「上游网关返回的东西不能用」。这类失败会重试，网络抖动有自愈机会。
+ * 502 的语义本就是「上游网关返回的东西不能用」。
+ * <p>这类失败同样<b>不重试</b>。原因是口径要单一：502 在边界表里只有一种处置，
+ * 若按失败来源分成「校验失败 1 次、网络失败 3 次」，同一状态码就有两种耗时表现，
+ * 审计日志里的 {@code attempts} 也就没法作为 502 的判定依据。
+ * 网络抖动的自愈放在网关侧更合适，不占学生的 92 秒。
  */
 @Service
 public class ResumeParseService {
@@ -110,12 +115,17 @@ public class ResumeParseService {
                 audit(requestId, studentId, fileId, startedAt, beginNanos, attempts, null);
                 return parsed;
             } catch (TimeoutException e) {
+                // 唯一会重试的失败：边界表「大模型连续三次均在 30 秒内无响应 → 重试 2 次后放弃」
                 failure = ErrorCode.PARSE_TIMEOUT;
             } catch (BusinessException e) {
-                // ResumeParseSchema 抛出的 MODEL_OUTPUT_INVALID
+                // ResumeParseSchema 抛出的 MODEL_OUTPUT_INVALID。
+                // 边界表「校验失败即终止，不展示半成品」——终止就是不再试，直接出循环。
                 failure = e.errorCode();
+                break;
             } catch (ModelCallFailedException e) {
+                // 网关、鉴权、中断这类调用失败同样映射 502；口径与校验失败保持一致，1 次即终止
                 failure = ErrorCode.MODEL_OUTPUT_INVALID;
+                break;
             }
         }
 
