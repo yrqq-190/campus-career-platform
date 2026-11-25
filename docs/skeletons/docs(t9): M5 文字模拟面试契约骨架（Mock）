@@ -1,9 +1,9 @@
-# T9：M5 文字模拟面试、四维评分与报告归档（Mock 骨架）
+# docs(t9): M5 文字模拟面试契约骨架（Mock）
 
 > 对应 Issue：#114｜分支：`feature/issue-114-m5-mock-session`（从 `main` 切出，一任务一分支）
 > 对应 spec/AC：`spec/module-05-mock-interview.md` AC-1、AC-2、AC-3、AC-4、AC-5、AC-6
 > 契约来源：`docs/architecture.md` §4.5（冻结契约，本文件只做 Mock 落地，不改契约、不新增 spec 之外的业务错误码）
-> 形态说明：本 PR 为 **docs-only 契约骨架 + 写死 Mock**（代码块仅作示意，不进入构建），不连库、不写业务规则，不调用大模型（严格使用本地题库与关键词匹配）。按 2026-11-24 团队口径，骨架 PR 统一走「评审 → 返修 → APPROVE → 合并」：本骨架经评审 APPROVE 后合入 `main` 并删除分支；第 10 周实现从最新 `main` 新开 `feature/issue-114-m5-mock-session-impl` 分支（Issue #114 保持打开、编号不变），在实现分支把示意代码替换为可编译的 Controller / Service / Mapper 与前端页面并补自动化测试。统一响应壳 `com.campus.career.common.ApiResponse`、`RequestIdFilter`、`GlobalExceptionHandler` 已在 `main`（M1 上传链路），其余 Service / Mapper、MapStruct、真实 HTTP 调用在实现分支接入。
+> 形态说明：本 PR 为 **docs-only 契约骨架 + 写死 Mock**（代码块仅作示意，不进入构建），不连库、不写业务规则、不调用大模型（严格使用本地题库与关键词匹配）。按 2026-11-24 团队口径，骨架 PR 统一走「评审 → 返修 → APPROVE → 合并」：本骨架经评审 APPROVE 后合入 `main` 并删除分支；第 10 周实现从最新 `main` 新开 `feature/issue-114-m5-mock-session-impl` 分支（Issue #114 保持打开、编号不变），在实现分支把示意代码替换为可编译的 Controller / Service / Mapper 与前端页面并补自动化测试。统一响应壳 `com.campus.career.common.ApiResponse`、`RequestIdFilter`、`GlobalExceptionHandler` 已在 `main`（M1 上传链路），其余 Service / Mapper、MapStruct、真实 HTTP 调用在实现分支接入。
 
 ## 1. 端点总览（architecture §4.5）
 
@@ -60,7 +60,7 @@ M5 严格不调用大模型，使用本地题库与关键词匹配评分（FR-5 
 | 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
 |---|---|---|---|---|
 | 400 | `JD_REQUIRED` | `jobId` 未传且 `jdText` 为空或不足 50 字 | 不创建会话 | AC-4；边界表「JD 为空」 |
-| 504 | —（无业务码） | 抽题接口请求超时（10 秒）且重试 1 次仍失败 | 不创建会话 | 边界表「接口超时与重试」；NFR-1 |
+| 504 | —（无业务码） | 抽题步骤（端点 1 内）请求超时（10 秒）且重试 1 次仍失败 | 不创建会话 | 边界表「接口超时与重试」；NFR-1 |
 
 统一失败响应体（以 `JD_REQUIRED` 为例，`code` / `requestId` 由统一返回壳输出）：
 
@@ -178,7 +178,7 @@ M5 严格不调用大模型，使用本地题库与关键词匹配评分（FR-5 
 
 | 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
 |---|---|---|---|---|
-| 409 | —（无业务码） | 仍有未作答题目的会话直接请求归档 | 不写归档，返回未答题目列表 | 通用鉴权约束（不暴露存在性） |
+| 409 | —（无业务码） | 仍有未作答题目的会话直接请求归档 | 不写归档，返回未答题目列表（字段 `unansweredQuestionIds: number[]`） | 通用鉴权约束（不暴露存在性） |
 | 500 | —（无业务码） | 报告同步至 M8 看板时发生异常 | 不产生归档，前端提示「报告归档失败」 | 边界表「报告归档失败」 |
 | 504 | —（无业务码） | 归档接口请求超时（10 秒）且重试 1 次仍失败 | 不写归档，会话保持 `IN_PROGRESS` | 边界表「接口超时与重试」；NFR-1 |
 
@@ -486,8 +486,16 @@ async function submitAnswer(): Promise<void> {
       currentState.value = 'ARCHIVING'
       await archiveReport()
     }
-  } catch {
-    localStorage.setItem('mock-answer-draft', draft) // AC-6：草稿保留，不记 0 分
+  } catch (error: any) {
+    // 评审建议：按状态码分流
+    if (error?.response?.status === 504 || error?.message === 'timeout') {
+      localStorage.setItem('mock-answer-draft', draft) // AC-6：504超时草稿保留
+      // ElMessage.error('网络异常，请重试') // 示意
+    } else {
+      // 404 / 409 等：提示会话失效，不再存草稿
+      // ElMessage.error('会话已失效，请重新开始') // 示意
+      currentState.value = 'INIT'
+    }
   }
 }
 
