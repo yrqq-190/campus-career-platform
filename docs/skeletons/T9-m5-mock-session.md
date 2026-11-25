@@ -1,4 +1,4 @@
-# docs(t9): M5 文字模拟面试契约骨架（Mock）
+# T9：M5 文字模拟面试、四维评分与报告归档（Mock 骨架）
 
 > 对应 Issue：#114｜分支：`feature/issue-114-m5-mock-session`（从 `main` 切出，一任务一分支）
 > 对应 spec/AC：`spec/module-05-mock-interview.md` AC-1、AC-2、AC-3、AC-4、AC-5、AC-6
