@@ -32,6 +32,7 @@
 | `pr-124.md` | #124 | T9 · M5 模拟面试会话与评分骨架 | 卢果 | 陈雪 COMMENT：契约端点、DTO/VO、Mock、错误码表全缺 |
 | `pr-125.md` | #125 | T10 · M6 面试登记与多级提醒骨架 | 卢果 | 赵蔚 COMMENT：时间基准联动、失败重试中间态、409 覆盖 |
 | `pr-127.md` | #127 | T3 · M1 解析降级（504/502/422）与档案保护 | 贾小舒 | 熊尚华 COMMENT：AC-6/8/9 与 NFR-2/3 通过，AC-7 功能通过 |
+| `pr-140.md` | #140 | T2 · M1 确认入库与档案读取（confirm / current） | 贾小舒 | 熊尚华 APPROVED（8 条全过 + 3 非阻塞：`resumeId` 校验、落库别久拖、全上下文测试可切片） |
 
 ## 3. 第 10 周 PR 终态（权威）
 
@@ -41,12 +42,15 @@
 | #120 | T4 / M2 | 已合并 `36bdbd1d` | base 已回收为 `main` 后合并 |
 | #121 | T5 / M2 | **已关闭，未合并** | 3 条 APPROVED（卢果 ×2、陈雪）；T5 代码已随 #127 的 rebase 一并进 main（`ProfileSynthesizer.java` 7,432 B、`ProfileController.java` 2,540 B 均在 main 上） |
 | #127 | T3 / M1 | 已合并 `42e994c3` | 熊尚华 11-23 COMMENT（`6025324175`）→ 11-24 APPROVED（`6034565468`）+ 陈雪 APPROVED（`6034420511`）；head 已 rebase `2a47222`，49 文件 +2907/−54 |
-| #113 | T6 / M3 | open，待评审记录合并 | 记录在 #132 |
+| #113 | T6 / M3 | **骨架 PR 仍 open**（记录已归档） | 评审记录 `pr-113.md`，承载 PR #132 已合并 `3fa5d7f1`；代码 PR 仍 `feature/issue-110-m3-recommend-list` → `main` |
 | #116 | T11 / M7 | 已合并 `1f3c547c` | 首轮 COMMENT `6024641908` → 返修 `e4be0a2` → 复审 APPROVED `6035159726`，3 项阻塞全闭合；分支已删 |
 | #124 | T9 / M5 | open，待作者补内容 | 参照 #116 的体量（契约端点、DTO/VO、Mock、错误码表） |
 | #125 | T10 / M6 | open，待作者补内容 | 记录 `pr-125.md` 的 3 条 |
-| #132 | 文档 | open，待合并 | #113 记录 |
-| #135 | 文档（spec） | open，已 APPROVED（贾小舒），待合并 | 502 校验失败不重试 |
+| #132 | 文档 | 已合并 `3fa5d7f1` | #113 记录（3 阻塞 + 2 建议），11-26 23:25 由颜睿卿合并，分支 `docs/issue-110-review-113` 已删 |
+| #135 | 文档（spec） | 已合并 `d6c38bba` | 502 校验失败不重试口径，11-24 由陈雪合并 |
+| #140 | T2 / M1 | **已合并 `42c3a683`** | 7 文件 +592/−5；Agent 自检 `7196200330`（1 非阻塞）→ 熊尚华 APPROVED `6076908876` → 贾小舒 11-26 23:57 合并；分支未删，记录见 `pr-140.md` |
+| #145 | 文档（Agent 评审通道） | 已合并 `826f81ab` | `docs/agent-review.md` + `docs/ci/pr-structure-check.yml` 备查 |
+| #146 | CI | open，待评审 | workflow 落 `.github/workflows/pr-structure-check.yml`（2 files，commit `be4787c` + 文档同步 `bf4a4a0`），待陈雪审 |
 
 ## 4. 纠错与说明（记录人登记）
 
@@ -56,10 +60,12 @@
 4. `pr-121.md` 写「状态 open」，实际 #121 已被关闭且未合并；T5 代码经 #127 rebase 进 main，关闭口径待作者在群里确认后再改这份记录。
 6. #116 的 PR 描述在第 9 周写「本周骨架 PR 不合并」，11-24 团队裁定改为「评审 → 返修 → APPROVE → 合并」；记录文件表述早于裁定，状态以第 3 节为准。
 5. `pr-119.md` 写「COMMENT（事后补充）」，而 #119 的 GitHub 评审事件是 APPROVED（赵蔚、陈雪，正文为空）。两者不冲突：记录补的是第 6 条「评审评论逐条列 AC」的缺口。
+7. `pr-140.md` 记的 `resumeId` 校验、落库、切片测试三条，是评审原文的**非阻塞观察**，不是待办阻塞项；AC-9 由 #127 与本 PR 两条路径合起来闭合，本 PR 未单独宣称闭合。
 
 ## 5. 待办
 
-- #132、#135 待合并。
+- #124 / #125 待作者按记录补齐后复审；#113 骨架 PR 仍 open，待作者按 `pr-113.md` 三条阻塞返修后复审。
+- #146（PR 结构自检 workflow）待陈雪评审合并；合并后由下一个 PR 事件首跑，结果贴回 #144。
 - `interview_note` 缺 `source / direction / next_probe_at / is_demo` 四列（已核实），待 T1（陈雪）开 schema Issue，链接回贴 #116 与 `-impl` 分支。
-- #124 / #125 待作者按记录补齐后复审。
-- #136（`PUT /api/v1/holland/profile/intent`，意向城市/期望行业写入）按 spec → architecture → 实现 顺序排下一轮。
+- #140 合并后「落库 PR」尚未开（`InMemoryConfirmedResumeRepository` 仍在），接口不动、独立承接。
+- #136（`PUT /api/v1/holland/profile/intent`，意向城市/期望行业写入）按 spec → architecture → 实现 顺序排下一轮；看板可先落 Blocked 列。
