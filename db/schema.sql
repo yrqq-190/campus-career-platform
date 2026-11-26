@@ -187,7 +187,7 @@ CREATE TABLE IF NOT EXISTS interview_note (
   KEY idx_note_status (status),
   KEY idx_note_company (company),
   KEY idx_note_source (source),
-  KEY idx_note_direction (direction),
+  KEY idx_note_direction (direction)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='面经外链';
 
 -- ---------- 9. v_dashboard 只读看板视图（M8 不建业务表） ----------
