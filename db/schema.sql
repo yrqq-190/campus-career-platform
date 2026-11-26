@@ -175,13 +175,19 @@ CREATE TABLE IF NOT EXISTS interview_note (
   title           VARCHAR(255) NULL,
   company         VARCHAR(128) NULL,
   position        VARCHAR(128) NULL,
+  direction       VARCHAR(32)  NULL     COMMENT '方向标签，如 Java；用于筛选与画像方向排序',
+  source          VARCHAR(64)  NULL     COMMENT '来源标注，如「某公开招聘社区」；入库必填（M7 AC-1）',
   tags            VARCHAR(255) NULL    COMMENT '标签，逗号分隔，用于筛选',
-  status          VARCHAR(16)  NOT NULL DEFAULT 'UNVERIFIED' COMMENT 'VALID/INVALID/UNVERIFIED',
+  status          VARCHAR(16)  NOT NULL DEFAULT 'UNVERIFIED' COMMENT 'VALID/INVALID/UNVERIFIED（对外映射 OK/INVALID/PENDING，见 architecture 4.7）',
   last_checked_at DATETIME     NULL    COMMENT '最近一次失效探测时间',
+  next_probe_at   DATETIME     NULL    COMMENT '下次 24 小时探测排期时间',
+  is_demo         TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '演示数据标识，1=演示（M7 AC-5）',
   created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_note_status (status),
-  KEY idx_note_company (company)
+  KEY idx_note_company (company),
+  KEY idx_note_source (source),
+  KEY idx_note_direction (direction),
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='面经外链';
 
 -- ---------- 9. v_dashboard 只读看板视图（M8 不建业务表） ----------
