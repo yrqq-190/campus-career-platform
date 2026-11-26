@@ -45,7 +45,11 @@ public enum ErrorCode {
      * 某维度得分无法回溯到任何作答，属计分数据异常。AC-8、边界行 6。
      * 用 500 而不是 4xx：这不是学生操作错了，是服务端数据出了问题。
      */
-    SCORE_NOT_TRACEABLE(HttpStatus.INTERNAL_SERVER_ERROR, "数据异常，请重新提交问卷");
+    SCORE_NOT_TRACEABLE(HttpStatus.INTERNAL_SERVER_ERROR, "数据异常，请重新提交问卷"),
+
+    // ---- M3 岗位推荐与外链 ----
+    /** 岗位外链已失效，点击时返回 404，并给出同关键词重检信息。AC-3 */
+    JOB_LINK_INVALID(HttpStatus.NOT_FOUND, "该链接可能已失效，已为您按关键词重新检索");
 
     private final HttpStatus httpStatus;
     private final String defaultMessage;
