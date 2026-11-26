@@ -3,14 +3,14 @@
 > 维护：颜睿卿（记录 / 看板）｜建立：2026-11-26（D1）
 > 对应：PPT P12「S8 上：Agent 评审 + 人工评审分工」、P16 评审记录模板、P20 检查表
 >
-> **D1 结论：本周走通道 C（人工 @Agent + 截图）。** 通道 A（Copilot code review）无订阅；通道 B（自建 Action）的 workflow 已写好备查于 `docs/ci/pr-structure-check.yml`，但**尚未落 `.github/workflows/`**——当前 PAT 只有 `repo` scope，向 workflow 路径写入会被拒，需补 `workflow` scope 或用网页提交一次。
+**D1 结论：通道 B 已提交待评审（PR #146），在它合并并在首个 PR 上跑通之前，本周仍按通道 C（人工 @Agent + 截图）执行。** 通道 A（Copilot code review）无订阅；通道 B 的 workflow 已用网页在 `ci/issue-144-pr-structure-check` 分支提交（commit `be4787c`，仅 1 文件 +74/−0），因 PAT 只有 `repo` scope，走 API 写 `.github/workflows/` 会被拒，所以走网页、未直推 main。看板 `Status` 字段已加 **Blocked** 选项（描述：被上游 spec 或依赖卡住，需先解阻塞再开工）。
 
 ## 1. 三条通道
 
 | 通道 | 触发方式 | 本周状态 | 说明 |
 |---|---|---|---|
 | A. Copilot code review | 仓库设置开启后自动评审 PR | 不可用 | 需 Copilot 订阅，仓库当前没有；入口 Settings → Copilot |
-| B. 自建 Action「PR 结构自检」 | PR 打开 / 编辑 / 推送即触发 | 待启用 | 文件已备于 `docs/ci/pr-structure-check.yml`，移入 `.github/workflows/` 即生效；只查结构、分支名、改动清单，**不做内容判断** |
+| B. 自建 Action「PR 结构自检」 | PR 打开 / 编辑 / 推送即触发 | 已提交待合并（PR #146） | `.github/workflows/pr-structure-check.yml` 已在 PR #146 中；合并后由下一个 PR 事件首跑。只查结构、分支名、改动清单，**不做内容判断** |
 | C. 人工 `@Agent` 评审 | PR 评论 @ 一个可用 Agent，按五项检查出结论 | 可用（兜底） | 结论与截图存进 `docs/review/pr-XX.md` |
 
 ## 2. 通道 B 会做什么（启用后）
@@ -57,5 +57,6 @@
 
 ## 6. 待办（D1 起）
 
-1. 补 PAT `workflow` scope（或由有权限的账号在网页提交一次），把 `docs/ci/pr-structure-check.yml` 移入 `.github/workflows/pr-structure-check.yml`，用一个测试 PR 验证评论与红叉。
-2. 看板 `Status` 字段加 **Blocked** 选项（需网页操作：Projects → Settings → Fields → Status）。加完把 `#136`（意向写入端点）等被 spec 卡住的卡片拖进去，作为 D4 检查表「Blocked 列标记 spec 卡点」的依据。
+1. 评审并合并 PR #146（提交人 ≠ 评审人，不自评自合）；合并后用 D2 的第一个 PR 验证通道 B 的评论与红叉，结果贴回 #144 与 `docs/review/`。
+2. ~~看板 `Status` 字段加 **Blocked** 选项~~ —— D1 已完成（含描述，Board 视图右侧已出现 Blocked 列）。**剩「把被卡卡片拖进 Blocked」**：`#136`（意向写入端点，等 spec 口径）等，作为 D4 检查表「Blocked 列标记 spec 卡点」的依据。
+3. 若 D3 前 PR #146 仍未合并，按通道 C 执行，Agent 结论与截图照旧写进 `docs/review/pr-XX.md`，不因缺 job 而跳过检查项。
