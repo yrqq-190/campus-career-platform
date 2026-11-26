@@ -47,7 +47,7 @@
 | #124 | T9 / M5 | open，待作者补内容 | 参照 #116 的体量（契约端点、DTO/VO、Mock、错误码表） |
 | #125 | T10 / M6 | open，待作者补内容 | 记录 `pr-125.md` 的 3 条 |
 | #132 | 文档 | 已合并 `3fa5d7f1` | #113 记录（3 阻塞 + 2 建议），11-26 23:25 由颜睿卿合并，分支 `docs/issue-110-review-113` 已删 |
-| #135 | 文档（spec） | 已合并 `d6c38bba` | 502 校验失败不重试口径，11-24 由陈雪合并 |
+| #135 | 文档（spec） | 已合并 `d6c38bba` | 502 校验失败不重试口径，由陈雪合并（UTC 11-24 16:02，本地 11-25 00:02） |
 | #140 | T2 / M1 | **已合并 `42c3a683`** | 7 文件 +592/−5；Agent 自检 `7196200330`（1 非阻塞）→ 熊尚华 APPROVED `6076908876` → 贾小舒 11-26 23:57 合并；分支未删，记录见 `pr-140.md` |
 | #145 | 文档（Agent 评审通道） | 已合并 `826f81ab` | `docs/agent-review.md` + `docs/ci/pr-structure-check.yml` 备查 |
 | #146 | CI | open，待评审 | workflow 落 `.github/workflows/pr-structure-check.yml`（2 files，commit `be4787c` + 文档同步 `bf4a4a0`），待陈雪审 |
