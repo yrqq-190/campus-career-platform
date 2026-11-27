@@ -931,6 +931,19 @@ END:VCALENDAR
 - `isDemo = true` 为演示数据标识，不与真实数据混用（AC-5）。
 - 筛选无匹配时 `items = []`，空态不是错误（AC-3）；画像方向缺失时 `personalizationApplied = false`，不做个性化排序、返回默认列表，仍支持手动筛选（AC-3）。
 
+
+**库内状态与对外 `linkStatus` 的分层映射（T1 schema 口径）**
+
+`interview_note.status` 为库内状态，`linkStatus` 为对外枚举，字面不同、语义一一对应；映射只在 VO 层做一次，库内枚举不随对外口径改动。
+
+| 库内 `status` | 对外 `linkStatus` | 含义 |
+|---|---|---|
+| VALID | OK | 最近一次探测可达 |
+| UNVERIFIED | PENDING | 入库后尚未完成首次探测 |
+| INVALID | INVALID | 探测失效，置灰不可点 |
+
+`is_demo = 1` 的记录对外 `isDemo = true`，列表展示「演示数据」标识（AC-5）。
+
 **失败响应**
 
 | 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |

@@ -69,6 +69,12 @@
 | 外链失效或来源不可达 | 提供同关键词重检兜底，标记来源 | AC-4 |
 | 演示数据混入 | 展示「演示数据」标识，不与真实数据混用 | AC-5 |
 
+## 数据口径
+
+面经记录在存储层保存 `source`（来源标注，入库必填）、`direction`（方向标签）、`next_probe_at`（下次探测排期）、`is_demo`（演示数据标识）四项。
+
+库内状态 `VALID / INVALID / UNVERIFIED` 与对外 `linkStatus` `OK / INVALID / PENDING` 一一对应（VALID→OK、UNVERIFIED→PENDING、INVALID→INVALID），映射关系见 `docs/architecture.md` §4.7，不在各端各写一份。
+
 ## Non-Goals
 
 - 不抓取、缓存或转载面经正文，只保存指向原始来源的外链。
