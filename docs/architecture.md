@@ -943,6 +943,7 @@ END:VCALENDAR
 | INVALID | INVALID | 探测失效，置灰不可点 |
 
 `is_demo = 1` 的记录对外 `isDemo = true`，列表展示「演示数据」标识（AC-5）。
+
 **失败响应**
 
 | 状态码 | 错误码 | 触发条件 | 数据影响 | 出处 |
