@@ -84,7 +84,7 @@ public class ProfileService {
                 result,
                 resumeProfileSource.findConfirmed(studentId),
                 intentRepository.find(studentId));
-        profileRepository.replace(studentId, profile);
+        profileRepository.replace(studentId, profile, result.scores());
         return profile;
     }
 }
