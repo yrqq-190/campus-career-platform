@@ -22,4 +22,10 @@ VALUES
  'https://example.com/jobs/3', 'demo', 'VALID')
 ON DUPLICATE KEY UPDATE title = VALUES(title);
 
--- 面经演示数据（含 is_demo 标识）待 #147 合并后补入，避免在该四列不存在时执行失败
+-- 面经演示数据（含 1 条演示标识，M7 AC-5）
+INSERT INTO interview_note (source_url, title, company, position, direction, source, status, is_demo)
+VALUES
+('https://example.com/notes/1', 'Java 后端一面复盘', '演示科技', 'Java 后端开发', '后端开发', '某公开招聘社区', 'VALID', 0),
+('https://example.com/notes/2', '前端校招二面记录', '演示网络', '前端开发工程师', '前端开发', '某技术论坛', 'UNVERIFIED', 0),
+('https://example.com/notes/3', '【演示数据】数据分析面试题', '演示数据', '数据分析师', '数据分析', '演示数据集', 'VALID', 1)
+ON DUPLICATE KEY UPDATE title = VALUES(title);
