@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS job (
   created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
+  UNIQUE KEY uk_job_external_url (external_url),
   KEY idx_job_link_status (link_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='岗位外链元数据';
 
@@ -184,13 +185,101 @@ CREATE TABLE IF NOT EXISTS interview_note (
   is_demo         TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '演示数据标识，1=演示（M7 AC-5）',
   created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
+  UNIQUE KEY uk_note_source_url (source_url),
   KEY idx_note_status (status),
   KEY idx_note_company (company),
   KEY idx_note_probe (next_probe_at),
   KEY idx_note_direction (direction)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='面经外链';
+-- ---------- 9. holland_quiz_session 问卷作答会话 ----------
+-- 一个学生一份问卷；提交后作答只读，重复提交返回 409 QUIZ_DUPLICATE_SUBMIT（M2 AC-2/AC-6）
+CREATE TABLE IF NOT EXISTS holland_quiz_session (
+  id           BIGINT      NOT NULL AUTO_INCREMENT,
+  student_id   BIGINT      NOT NULL,
+  round_no     INT         NOT NULL DEFAULT 1 COMMENT '作答轮次；重新作答新建一轮，历史轮次只读（M2 FR-7）。落库必须显式取 MAX(round_no)+1，不依赖默认值',
+  status       VARCHAR(16) NOT NULL DEFAULT 'IN_PROGRESS' COMMENT 'IN_PROGRESS 作答中 / SUBMITTED 已提交',
+  started_at   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '首次作答时间，用于续答（M2 AC-1）',
+  submitted_at DATETIME    NULL     COMMENT '提交时间；非空即作答只读',
+  created_at   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_quiz_session_student_round (student_id, round_no),
+  KEY idx_quiz_session_status (status),
+  CONSTRAINT fk_quiz_session_student FOREIGN KEY (student_id) REFERENCES student (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='霍兰德问卷作答会话';
 
--- ---------- 9. v_dashboard 只读看板视图（M8 不建业务表） ----------
+-- ---------- 10. quiz_answer 问卷逐题作答 ----------
+-- 每题一条；分值口径由题库选项决定，用于六维汇总（M2 AC-2）
+CREATE TABLE IF NOT EXISTS quiz_answer (
+  id          BIGINT   NOT NULL AUTO_INCREMENT,
+  session_id  BIGINT   NOT NULL,
+  question_id INT      NOT NULL COMMENT '题库题号，题库常量在代码中维护',
+  dimension   CHAR(1)  NOT NULL COMMENT 'R/I/A/S/E/C',
+  score       TINYINT  NOT NULL COMMENT '该题所选选项对应分值，口径见题库选项定义',
+  answered_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_quiz_answer_session_question (session_id, question_id),
+  CONSTRAINT fk_quiz_answer_session FOREIGN KEY (session_id) REFERENCES holland_quiz_session (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='问卷逐题作答';
+
+-- ---------- 11. mock_interview 模拟面试会话 ----------
+-- M5 不调用大模型；题面与评分来自本地题库与关键词匹配
+CREATE TABLE IF NOT EXISTS mock_interview (
+  id              BIGINT       NOT NULL AUTO_INCREMENT,
+  student_id      BIGINT       NOT NULL,
+  job_id          BIGINT       NULL     COMMENT '关联 job(id)，可为空；为空时降级手填 jd_text（M5 AC-4）',
+  jd_text         TEXT         NULL     COMMENT '手填 JD，≥50 字；job_id 为空时必填（M5 AC-4）',
+  status          VARCHAR(16)  NOT NULL DEFAULT 'IN_PROGRESS' COMMENT 'IN_PROGRESS / ARCHIVED / CANCELLED',
+  total_questions TINYINT      NOT NULL COMMENT '本次抽题数，5-8 道',
+  total_score     TINYINT      NULL     COMMENT '归档后写入总分 0-100',
+  started_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  archived_at     DATETIME     NULL     COMMENT '归档时间；归档幂等（M5 AC-3）',
+  created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_mock_interview_student (student_id),
+  KEY idx_mock_interview_status (status),
+  CONSTRAINT fk_mock_interview_student FOREIGN KEY (student_id) REFERENCES student (id),
+  CONSTRAINT fk_mock_interview_job FOREIGN KEY (job_id) REFERENCES job (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模拟面试会话';
+
+-- ---------- 12. mock_interview_answer 模拟面试单题作答 ----------
+CREATE TABLE IF NOT EXISTS mock_interview_answer (
+  id               BIGINT       NOT NULL AUTO_INCREMENT,
+  session_id       BIGINT       NOT NULL,
+  question_id      INT          NOT NULL,
+  question_content VARCHAR(512) NOT NULL COMMENT '题面冗余存储，避免题库变更导致历史报告失真',
+  dimension        VARCHAR(16)  NOT NULL COMMENT '专业知识 / 逻辑表达 / 项目经验 / 岗位匹配度',
+  answer_text      TEXT         NOT NULL COMMENT '学生作答原文',
+  score            TINYINT      NULL     COMMENT '单题得分 0-100；未评分时为空',
+  score_status     VARCHAR(16)  NULL     COMMENT 'COMPLETE / PARTIAL（维度未命中或极短回答，M5 AC-5）',
+  feedback         VARCHAR(512) NULL     COMMENT '关键词命中或展开提示',
+  answered_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_mock_answer_session_question (session_id, question_id),
+  CONSTRAINT fk_mock_answer_session FOREIGN KEY (session_id) REFERENCES mock_interview (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模拟面试单题作答';
+
+-- ---------- 13. mock_interview_report 模拟面试报告（归档） ----------
+-- 与 mock_interview 一对一；重复归档不新增行（M5 AC-3 幂等）
+CREATE TABLE IF NOT EXISTS mock_interview_report (
+  id                 BIGINT       NOT NULL AUTO_INCREMENT,
+  session_id         BIGINT       NOT NULL,
+  total_score        TINYINT      NOT NULL COMMENT '总分 0-100',
+  score_professional TINYINT      NOT NULL DEFAULT 0 COMMENT '专业知识',
+  score_logic        TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑表达',
+  score_experience   TINYINT      NOT NULL DEFAULT 0 COMMENT '项目经验',
+  score_match        TINYINT      NOT NULL DEFAULT 0 COMMENT '岗位匹配度',
+  summary            VARCHAR(512) NULL     COMMENT '评价总结；维度缺项在此标注',
+  archived_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_mock_report_session (session_id),
+  CONSTRAINT fk_mock_report_session FOREIGN KEY (session_id) REFERENCES mock_interview (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模拟面试报告归档';
+
+-- ---------- 14. v_dashboard 只读看板视图（M8 不建业务表） ----------
 -- 全部用 COUNT(DISTINCT ...) 聚合，避免多表 LEFT JOIN 扇出放大
 CREATE OR REPLACE VIEW v_dashboard AS
 SELECT
