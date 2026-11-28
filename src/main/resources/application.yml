@@ -5,6 +5,16 @@ spring:
   application:
     name: campus-career-platform
 
+  # 默认 profile 不连数据库：本机没有 MySQL，若让 DataSource 自动配置生效，
+  # 启动时会因为没有 url 直接失败，全部集成测试也就跑不起来。
+  # 连库时用 mysql profile —— application-mysql.yml 会覆盖这份排除清单。
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+      - com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration
+      - com.baomidou.mybatisplus.autoconfigure.MybatisPlusLanguageDriverAutoConfiguration
+
   servlet:
     multipart:
       # 与 spec/mvp1-scope.md 的 MAX_RESUME_SIZE 一致：恰好 10MB 放行。

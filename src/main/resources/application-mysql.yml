@@ -1,0 +1,22 @@
+# mysql profile：真库连接。默认 profile 不加载本文件。
+# 数据层选型见 docs/architecture.md 第 2 章：MyBatis-Plus + MySQL 8.0。
+#
+# 用法：启动时把 spring.profiles.active 设为 mysql，或设环境变量 SPRING_PROFILES_ACTIVE=mysql。
+# 连接信息全部走环境变量，不把口令写进仓库。
+spring:
+  # 覆盖 application.yml 里的排除清单：连库时 DataSource 与 MyBatis-Plus 才是必需的。
+  autoconfigure:
+    exclude: []
+
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/campus_career?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis-plus:
+  configuration:
+    # 表里是 score_r / next_probe_at 这类下划线列名，实体用驼峰，必须开着映射。
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
