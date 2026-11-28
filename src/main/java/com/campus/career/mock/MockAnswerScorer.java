@@ -17,10 +17,19 @@ import org.springframework.stereotype.Component;
  *   <li>得分 = round(100 × (0.7 × 命中率 + 0.3 × 篇幅率))，裁剪到 0–100 的整数。</li>
  * </ol>
  *
- * <p>{@code scoreStatus} 的判定（AC-5、边界表「评分维度缺项」）：
- * 字数少于 {@link #MIN_MEANING_LENGTH} 记为极短回答，或一个关键词都没命中，都标 {@code PARTIAL}；
- * 两者都不满足才是 {@code COMPLETE}。标 {@code PARTIAL} 不等于 0 分——边界表要求的是「给出低分 + 提示」，
- * 不是判负，所以仍按上面公式出分，只是状态与提示不同。
+ * <p><b>零命中不套上面的公式</b>：边界表写明「若某维度题目用户未作答或关键词完全未命中，
+ * 该维度得分记为 0，并在最终报告中提示『该维度能力有待提升』」。所以零命中直接返回 0 分，
+ * 不再叠加篇幅分——否则 100 字全跑题还能拿 30 分，与 spec 冲突。
+ *
+ * <p>{@code scoreStatus} 三条分支（AC-5、边界表「评分维度缺项」）：
+ * <ul>
+ *   <li>零命中（含空作答）→ 0 分、{@code PARTIAL}、提示「该维度能力有待提升」；</li>
+ *   <li>有命中但字数少于 {@link #MIN_MEANING_LENGTH} → 按公式出低分、{@code PARTIAL}、提示「回答过于简短」；</li>
+ *   <li>其余 → 按公式出分、{@code COMPLETE}。</li>
+ * </ul>
+ *
+ * <p>零命中优先于极短：极短且零命中同样是「这一维度没答上来」，先按缺项提示，
+ * 而不是催学生「再展开点」——展开跑题也还是 0 分。
  */
 @Component
 public class MockAnswerScorer {
@@ -34,7 +43,12 @@ public class MockAnswerScorer {
     /** 少于这个字数即视为「极短/敷衍」（AC-5）。取 10 是因为「不知道」「没做过」这类敷衍回答都在 5 字以内。 */
     static final int MIN_MEANING_LENGTH = 10;
 
-    /** 期望篇幅。取 50 与 spec 边界表「JD 少于 50 字需提示」同口径，学生对这个数量级有直觉。 */
+    /**
+     * 期望篇幅，只用于算篇幅率与提示文案。
+     *
+     * <p>取值 50 与 AC-4「JD 少于 50 字需提示」的 50 <b>无关</b>：这里说的是「作答建议写到多少字」，
+     * 那里说的是「岗位描述太短要提醒用户补充」。两处数字相同是巧合，别当成同一条规则。
+     */
     static final int RECOMMENDED_LENGTH = 50;
 
     /** 命中满分的词数。3 个是「能说出具体做法」的最低门槛，再多不加分，避免堆词刷分。 */
@@ -42,6 +56,10 @@ public class MockAnswerScorer {
 
     private static final double KEYWORD_WEIGHT = 0.7;
     private static final double LENGTH_WEIGHT = 0.3;
+
+    /** 边界表指定的缺项提示，最终报告里同一维度也复用它（FR-6）。 */
+    static final String FEEDBACK_DIMENSION_MISSING =
+            "该维度能力有待提升：未覆盖该维度的要点，建议补充具体场景、做法与结果。";
 
     /**
      * 四维关键词表。
@@ -59,23 +77,27 @@ public class MockAnswerScorer {
      * 对一次作答评分。
      *
      * @param dimension  题目所属维度，取四个常量之一
-     * @param answerText 学生作答原文，允许为空（空串按极短回答处理，不抛异常）
+     * @param answerText 学生作答原文，允许为空（空串按零命中处理，不抛异常）
      */
     public MockScore score(String dimension, String answerText) {
         String text = answerText == null ? "" : answerText.trim();
         List<String> vocabulary = KEYWORDS.getOrDefault(dimension, List.of());
         List<String> hits = matchKeywords(text, vocabulary);
 
-        boolean tooShort = text.length() < MIN_MEANING_LENGTH;
-        boolean noHit = hits.isEmpty();
+        // 边界表：未作答或关键词完全未命中 → 该维度记 0 分。
+        // 必须在篇幅计分之前返回，否则「写得越长、跑题越值钱」。
+        if (hits.isEmpty()) {
+            return new MockScore(0, STATUS_PARTIAL, FEEDBACK_DIMENSION_MISSING);
+        }
 
+        boolean tooShort = text.length() < MIN_MEANING_LENGTH;
         double keywordRatio = Math.min(1.0, hits.size() / (double) FULL_HIT_COUNT);
         double lengthRatio = Math.min(1.0, text.length() / (double) RECOMMENDED_LENGTH);
         int score = (int) Math.round(100 * (KEYWORD_WEIGHT * keywordRatio + LENGTH_WEIGHT * lengthRatio));
         score = Math.max(0, Math.min(100, score));
 
-        String status = (tooShort || noHit) ? STATUS_PARTIAL : STATUS_COMPLETE;
-        return new MockScore(score, status, feedback(text, hits, tooShort, noHit));
+        String status = tooShort ? STATUS_PARTIAL : STATUS_COMPLETE;
+        return new MockScore(score, status, feedback(text, hits));
     }
 
     private List<String> matchKeywords(String text, List<String> vocabulary) {
@@ -89,14 +111,11 @@ public class MockAnswerScorer {
         return hits;
     }
 
-    private String feedback(String text, List<String> hits, boolean tooShort, boolean noHit) {
-        if (tooShort) {
-            // 文案取自 spec 边界表「回答极短/敷衍」：回答过于简短，建议展开描述
-            return "回答过于简短，建议展开描述（当前 " + text.length()
-                    + " 字，建议不少于 " + RECOMMENDED_LENGTH + " 字）。";
-        }
-        if (noHit) {
-            return "未命中该维度关键词，建议补充具体场景、做法与结果。";
+    private String feedback(String text, List<String> hits) {
+        if (text.length() < MIN_MEANING_LENGTH) {
+            // 边界表「回答极短/敷衍」：给低分 + 提示展开，不判 0
+            return "回答过于简短，建议展开到 " + RECOMMENDED_LENGTH + " 字以上"
+                    + "（当前 " + text.length() + " 字）。";
         }
         return "命中关键词：" + String.join("、", hits) + "。";
     }
@@ -123,7 +142,7 @@ public class MockAnswerScorer {
      *
      * @param score       0–100 整数
      * @param scoreStatus {@code COMPLETE} 或 {@code PARTIAL}（AC-5）
-     * @param feedback    命中关键词或「过于简短」的提示，直接回给前端展示
+     * @param feedback    命中关键词、缺项或「过于简短」的提示，直接回给前端展示
      */
     public record MockScore(int score, String scoreStatus, String feedback) {
     }
