@@ -190,13 +190,14 @@ CREATE TABLE IF NOT EXISTS interview_note (
 CREATE TABLE IF NOT EXISTS holland_quiz_session (
   id           BIGINT      NOT NULL AUTO_INCREMENT,
   student_id   BIGINT      NOT NULL,
+  round_no     INT         NOT NULL DEFAULT 1 COMMENT '作答轮次；重新作答新建一轮，历史轮次只读（M2 FR-7）',
   status       VARCHAR(16) NOT NULL DEFAULT 'IN_PROGRESS' COMMENT 'IN_PROGRESS 作答中 / SUBMITTED 已提交',
   started_at   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '首次作答时间，用于续答（M2 AC-1）',
   submitted_at DATETIME    NULL     COMMENT '提交时间；非空即作答只读',
   created_at   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uk_quiz_session_student (student_id),
+  UNIQUE KEY uk_quiz_session_student_round (student_id, round_no),
   KEY idx_quiz_session_status (status),
   CONSTRAINT fk_quiz_session_student FOREIGN KEY (student_id) REFERENCES student (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='霍兰德问卷作答会话';
