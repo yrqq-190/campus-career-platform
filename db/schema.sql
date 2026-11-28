@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS job (
   created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
+  UNIQUE KEY uk_job_external_url (external_url),
   KEY idx_job_link_status (link_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='岗位外链元数据';
 
@@ -210,7 +211,6 @@ CREATE TABLE IF NOT EXISTS quiz_answer (
   answered_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uk_quiz_answer_session_question (session_id, question_id),
-  KEY idx_quiz_answer_session (session_id),
   CONSTRAINT fk_quiz_answer_session FOREIGN KEY (session_id) REFERENCES holland_quiz_session (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='问卷逐题作答';
 
@@ -219,7 +219,7 @@ CREATE TABLE IF NOT EXISTS quiz_answer (
 CREATE TABLE IF NOT EXISTS mock_interview (
   id              BIGINT       NOT NULL AUTO_INCREMENT,
   student_id      BIGINT       NOT NULL,
-  job_id          BIGINT       NULL     COMMENT '关联 M4 投递记录，可为空（降级为手填 JD）',
+  job_id          BIGINT       NULL     COMMENT '关联 job(id)，可为空；为空时降级手填 jd_text（M5 AC-4）',',
   jd_text         TEXT         NULL     COMMENT '手填 JD，≥50 字；job_id 为空时必填（M5 AC-4）',
   status          VARCHAR(16)  NOT NULL DEFAULT 'IN_PROGRESS' COMMENT 'IN_PROGRESS / ARCHIVED / CANCELLED',
   total_questions TINYINT      NOT NULL COMMENT '本次抽题数，5-8 道',
@@ -230,7 +230,8 @@ CREATE TABLE IF NOT EXISTS mock_interview (
   PRIMARY KEY (id),
   KEY idx_mock_interview_student (student_id),
   KEY idx_mock_interview_status (status),
-  CONSTRAINT fk_mock_interview_student FOREIGN KEY (student_id) REFERENCES student (id)
+  CONSTRAINT fk_mock_interview_student FOREIGN KEY (student_id) REFERENCES student (id),
+  CONSTRAINT fk_mock_interview_job FOREIGN KEY (job_id) REFERENCES job (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模拟面试会话';
 
 -- ---------- 12. mock_interview_answer 模拟面试单题作答 ----------
@@ -247,7 +248,6 @@ CREATE TABLE IF NOT EXISTS mock_interview_answer (
   answered_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uk_mock_answer_session_question (session_id, question_id),
-  KEY idx_mock_answer_session (session_id),
   CONSTRAINT fk_mock_answer_session FOREIGN KEY (session_id) REFERENCES mock_interview (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模拟面试单题作答';
 
