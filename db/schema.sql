@@ -181,6 +181,7 @@ CREATE TABLE IF NOT EXISTS interview_note (
   last_checked_at DATETIME     NULL    COMMENT '最近一次失效探测时间',
   created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
+  UNIQUE KEY uk_note_source_url (source_url),
   KEY idx_note_status (status),
   KEY idx_note_company (company)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='面经外链';
