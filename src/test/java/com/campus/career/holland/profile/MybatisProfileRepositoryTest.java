@@ -30,9 +30,14 @@ import org.mockito.ArgumentCaptor;
  *
  * <p>不打数据库：Mapper 与学生目录都用 mock，只验「Java 对象 → 行」与「行 → Java 对象」
  * 这两个方向的转换是否正确，包括 JSON 列的序列化、{@code skill_missing} 与
- * {@code top_dimension} 的取值。SQL 本身由 {@code HollandProfileMapperSqlTest} 单独验。
+ * {@code top_dimension} 的取值。
  *
- * <p>这个类不依赖 mysq profile，也不受 {@code @Profile("mysql")} 影响 —— 直接 new 出实例。
+ * <p><b>限制</b>：本类不覆盖 SQL 本身。{@code ON DUPLICATE KEY UPDATE} 的冲突分支、JSON 列的
+ * 写入与还原、{@code top_dimension} 的 {@code NOT NULL} 约束，目前只在手工 H2 脚本里验过
+ * （MySQL 兼容模式连跑两次同一行：行数不变、{@code revision} 自增、分数被覆盖），
+ * 没有自动化 SQL 测试；真库执行留到 D4 联调。
+ *
+ * <p>这个类不依赖 mysql profile，也不受 {@code @Profile("mysql")} 影响 —— 直接 new 出实例。
  */
 class MybatisProfileRepositoryTest {
 
