@@ -190,7 +190,7 @@ CREATE TABLE IF NOT EXISTS interview_note (
 CREATE TABLE IF NOT EXISTS holland_quiz_session (
   id           BIGINT      NOT NULL AUTO_INCREMENT,
   student_id   BIGINT      NOT NULL,
-  round_no     INT         NOT NULL DEFAULT 1 COMMENT '作答轮次；重新作答新建一轮，历史轮次只读（M2 FR-7）',
+  round_no     INT         NOT NULL DEFAULT 1 COMMENT '作答轮次；重新作答新建一轮，历史轮次只读（M2 FR-7）。落库必须显式取 MAX(round_no)+1，不依赖默认值',
   status       VARCHAR(16) NOT NULL DEFAULT 'IN_PROGRESS' COMMENT 'IN_PROGRESS 作答中 / SUBMITTED 已提交',
   started_at   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '首次作答时间，用于续答（M2 AC-1）',
   submitted_at DATETIME    NULL     COMMENT '提交时间；非空即作答只读',
@@ -211,6 +211,7 @@ CREATE TABLE IF NOT EXISTS quiz_answer (
   dimension   CHAR(1)  NOT NULL COMMENT 'R/I/A/S/E/C',
   score       TINYINT  NOT NULL COMMENT '该题所选选项对应分值，口径见题库选项定义',
   answered_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uk_quiz_answer_session_question (session_id, question_id),
   CONSTRAINT fk_quiz_answer_session FOREIGN KEY (session_id) REFERENCES holland_quiz_session (id)
@@ -221,11 +222,11 @@ CREATE TABLE IF NOT EXISTS quiz_answer (
 CREATE TABLE IF NOT EXISTS mock_interview (
   id              BIGINT       NOT NULL AUTO_INCREMENT,
   student_id      BIGINT       NOT NULL,
-  job_id          BIGINT       NULL     COMMENT '关联 job(id)，可为空；为空时降级手填 jd_text（M5 AC-4）',',
+  job_id          BIGINT       NULL     COMMENT '关联 job(id)，可为空；为空时降级手填 jd_text（M5 AC-4）',
   jd_text         TEXT         NULL     COMMENT '手填 JD，≥50 字；job_id 为空时必填（M5 AC-4）',
   status          VARCHAR(16)  NOT NULL DEFAULT 'IN_PROGRESS' COMMENT 'IN_PROGRESS / ARCHIVED / CANCELLED',
   total_questions TINYINT      NOT NULL COMMENT '本次抽题数，5-8 道',
-  total_score     SMALLINT     NULL     COMMENT '归档后写入总分 0-100',
+  total_score     TINYINT      NULL     COMMENT '归档后写入总分 0-100',
   started_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   archived_at     DATETIME     NULL     COMMENT '归档时间；归档幂等（M5 AC-3）',
   created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -248,6 +249,7 @@ CREATE TABLE IF NOT EXISTS mock_interview_answer (
   score_status     VARCHAR(16)  NULL     COMMENT 'COMPLETE / PARTIAL（维度未命中或极短回答，M5 AC-5）',
   feedback         VARCHAR(512) NULL     COMMENT '关键词命中或展开提示',
   answered_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uk_mock_answer_session_question (session_id, question_id),
   CONSTRAINT fk_mock_answer_session FOREIGN KEY (session_id) REFERENCES mock_interview (id)
@@ -265,6 +267,7 @@ CREATE TABLE IF NOT EXISTS mock_interview_report (
   score_match        TINYINT      NOT NULL DEFAULT 0 COMMENT '岗位匹配度',
   summary            VARCHAR(512) NULL     COMMENT '评价总结；维度缺项在此标注',
   archived_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uk_mock_report_session (session_id),
   CONSTRAINT fk_mock_report_session FOREIGN KEY (session_id) REFERENCES mock_interview (id)
