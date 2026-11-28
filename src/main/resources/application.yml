@@ -18,6 +18,9 @@ spring:
 logging:
   level:
     com.campus.career: INFO
+  charset:
+    # Windows 控制台默认按 GBK 解析日志输出，中文会乱码；显式钉成 UTF-8。
+    console: UTF-8
 
 career:
   parse:
